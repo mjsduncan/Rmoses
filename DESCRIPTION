@@ -4,8 +4,8 @@ Title: wrappers and tools for using opencog::moses
 Version: 0.1
 Date: 2013-07-20
 Author: mike d
-Maintainer: Who to complain to <mjsduncan@gmail.com>
-Description: "Meta-optimizing semantic evolutionary search (MOSES) is a 
+Maintainer: mike d <mjsduncan@gmail.com>
+Description: "Meta-optimizing semantic evolutionary search"" (MOSES) is a 
 supervised machine learning system that generates programs in a simple lisp-
 like language to minimize a scoring function over the data to be catagorized.  
 It's two level algorithm generates a population of sample programs or "demes"
