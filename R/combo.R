@@ -29,7 +29,7 @@ exp2fun <- function(str) {
 }
 
 
-#### convert string to nested lists of doubles & triples   these functions work for combo syntax in wiki examples
+#### convert string to nested lists of doubles & triples.   these functions work for combo syntax in wiki examples
 
 combo2list <- function(str){
   paste(                            # add external list function to string
