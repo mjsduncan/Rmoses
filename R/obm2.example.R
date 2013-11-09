@@ -56,6 +56,20 @@ combo.v1 <- moses("-j2 -W1 -u controls -Y sample --hc-single-step=1 --enable-fs=
  [8] "-7 and(or(and(or(and(!$NM_003056_at !$NM_005529_at $NM_201443_at) $NM_201541_at) $NM_004486_at !$XM_933006_at) $NM_000804_at) or($NM_201539_at !$NM_201552_at)) "
  [9] "-7 and(or(and(or(and(!$NM_003057_at !$NM_005529_at $NM_201443_at) $NM_201541_at) $NM_004486_at !$XM_933006_at) $NM_000804_at) or($NM_201539_at !$NM_201552_at)) "
 [10] "-7 and(or(and(or(and($NM_003068_at !$NM_005529_at $NM_201443_at) $NM_201541_at) $NM_004486_at !$XM_933006_at) $NM_000804_at) or($NM_201539_at !$NM_201552_at)) " 
+
+combo.v1 <- moses("-j2 -W1 -u controls -Y sample --hc-single-step=1 -m 100000 --enable-fs=1","hlungtx1_moses.csv")
+> combo.v1
+ [1] "-1 and(or(and(or($NM_003062_at !$NM_201552_at) or($NM_201443_at $NM_201541_at) $NM_004486_at $NM_006187_at !$XM_933006_at !$XR_000645_at) $NM_000804_at !$NM_013339_at) !$NM_022358_at) "               
+ [2] "-1 and(or(and(or($NM_003062_at !$NM_201552_at) or($NM_201443_at $NM_201541_at) !$XM_933006_at !$XR_000645_at) $NM_000804_at !$NM_013339_at) $NM_004486_at $NM_006187_at !$NM_022358_at) "               
+ [3] "-1 or(and(or(and(or($NM_003062_at !$NM_201552_at) or($NM_201443_at $NM_201541_at) $NM_004486_at $NM_006187_at !$XM_933006_at !$XR_000645_at) !$NM_013339_at) !$NM_022358_at) $NM_000804_at) "           
+ [4] "-1 and(or(and(or(and(or($NM_201443_at $NM_201541_at) $NM_004486_at $NM_006187_at !$XM_933006_at !$XR_000645_at) $NM_000804_at) or($NM_003062_at !$NM_201552_at)) !$NM_013339_at) !$NM_022358_at) "      
+ [5] "-1 and(or(and(or(and(or($NM_201443_at $NM_201541_at) $NM_004486_at !$XM_933006_at !$XR_000645_at) $NM_000804_at) or($NM_003062_at !$NM_201552_at) $NM_006187_at) !$NM_013339_at) !$NM_022358_at) "      
+ [6] "-1 and(or(and(or(and(or($NM_201443_at $NM_201541_at) $NM_006187_at !$XM_933006_at !$XR_000645_at) $NM_000804_at) or($NM_003062_at !$NM_201552_at) $NM_004486_at) !$NM_013339_at) !$NM_022358_at) "      
+ [7] "-1 and(or(and(or(and(or($NM_201443_at $NM_201541_at) !$XM_933006_at !$XR_000645_at) $NM_000804_at) or($NM_003062_at !$NM_201552_at)) !$NM_013339_at) $NM_004486_at $NM_006187_at !$NM_022358_at) "      
+ [8] "-1 and(or(and(or(!$NM_000317_at $NM_003062_at !$NM_201552_at) or($NM_201443_at $NM_201541_at) $NM_004486_at $NM_006187_at !$XM_933006_at !$XR_000645_at) $NM_000804_at !$NM_013339_at) !$NM_022358_at) "
+ [9] "-1 and(or(and(or(!$NM_000317_at $NM_201443_at $NM_201541_at) or($NM_003062_at !$NM_201552_at) $NM_004486_at $NM_006187_at !$XM_933006_at !$XR_000645_at) $NM_000804_at !$NM_013339_at) !$NM_022358_at) "
+[10] "-1 and(or(and(or(!$NM_000318_at $NM_003062_at !$NM_201552_at) or($NM_201443_at $NM_201541_at) $NM_004486_at $NM_006187_at !$XM_933006_at !$XR_000645_at) $NM_000804_at !$NM_013339_at) !$NM_022358_at) "
+
 combo.v2 <- moses("-j2 -W1 -u controls -Y sample -a sa --enable-fs=1","hlungtx1_moses.csv")   # run moses on 2 cores sa algo
 > combo.v2
  [1] "-15 $NM_014753_at "                     "-15 and($NM_014753_at $NM_014754_at) "  "-15 and($NM_014753_at $NM_014755_at) " 
