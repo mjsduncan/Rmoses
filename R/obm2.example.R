@@ -56,8 +56,8 @@ combo.v1 <- c(
  , "-7 and(or(and(or(and(!$NM_003057_at !$NM_005529_at $NM_201443_at) $NM_201541_at) $NM_004486_at !$XM_933006_at) $NM_000804_at) or($NM_201539_at !$NM_201552_at)) "
 , "-7 and(or(and(or(and($NM_003068_at !$NM_005529_at $NM_201443_at) $NM_201541_at) $NM_004486_at !$XM_933006_at) $NM_000804_at) or($NM_201539_at !$NM_201552_at)) " )
 
-combo.v1 <- moses("-j2 -W1 -u controls -Y sample --hc-single-step=1 -m 100000 --enable-fs=1","hlungtx1_moses.csv")
-combo.v1 <- c(
+combo.v1m <- moses("-j2 -W1 -u controls -Y sample --hc-single-step=1 -m 100000 --enable-fs=1","hlungtx1_moses.csv")
+combo.v1m <- c(
   "-1 and(or(and(or($NM_003062_at !$NM_201552_at) or($NM_201443_at $NM_201541_at) $NM_004486_at $NM_006187_at !$XM_933006_at !$XR_000645_at) $NM_000804_at !$NM_013339_at) !$NM_022358_at) "               
  , "-1 and(or(and(or($NM_003062_at !$NM_201552_at) or($NM_201443_at $NM_201541_at) !$XM_933006_at !$XR_000645_at) $NM_000804_at !$NM_013339_at) $NM_004486_at $NM_006187_at !$NM_022358_at) "               
  , "-1 or(and(or(and(or($NM_003062_at !$NM_201552_at) or($NM_201443_at $NM_201541_at) $NM_004486_at $NM_006187_at !$XM_933006_at !$XR_000645_at) !$NM_013339_at) !$NM_022358_at) $NM_000804_at) "           
@@ -91,14 +91,23 @@ combo.v3 <- c(
 
 ## extract samples
 
-combo.all <- c(combo.v, combo.v1, combo.v2, combo.v3, combo.vm)
-hlungtx1.combo <- str_split_fixed(combo.all, " ", 2)[,2]                        # extract combo program string
-hlungtx1.ranks <- as.numeric(str_split_fixed(combo.all, " ", 2)[,1])                        # extract combo program string
-hlungtx1.probes <- str_replace_all(hlungtx1.combo, "and+", "")
-hlungtx1.probes <- str_replace_all(hlungtx1.probes, "or+", "")
-hlungtx1.probes <- str_replace_all(hlungtx1.probes, "[()$]+", "")
-
-
-re <- "\\(([^()]+)\\)"
-gsub(re, "\\1", str_extract_all(combo.all, re)[[2]])
-sapply(str_extract_all(combo.v, re), gsub, re, "\\1")
+combo.all <- c(combo.v, combo.vm, combo.v1, combo.v1m, combo.v3, combo.v2)      # put all moses combo results in a vector
+hlungtx1.combo <- str_split_fixed(combo.all, " ", 2)[,2]                        # extract combo program strings
+hlungtx1.ranks <- as.numeric(str_split_fixed(combo.all, " ", 2)[,1])            # extract combo program scores
+hlungtx1.probes <- str_replace_all(hlungtx1.combo, "and+", "")            ##
+hlungtx1.probes <- str_replace_all(hlungtx1.probes, "or+", "")             #
+hlungtx1.probes <- str_replace_all(hlungtx1.probes, "[()$]+", "")           ##  reduce combo program to string of probes
+hlungtx1.probes <- str_trim(hlungtx1.probes)                              ##
+hlungtx1.moseslist <- str_split(hlungtx1.probes, pattern = " ")              #  make list of vectors of probes
+#  dataframe of all probe instances from list
+hlungtx1.ranks <- rep(hlungtx1.ranks, sapply(hlungtx1.moseslist, length))
+hlungtx1.probes <- data.frame(probe = unlist(hlungtx1.moseslist), score = hlungtx1.ranks, stringsAsFactors = FALSE)                
+# create "not" variable to indicate controls correlated with low expression
+hlungtx1.probes$con_low <- str_detect(hlungtx1.probes$probe, "!")
+hlungtx1.probes$probe <- str_replace(hlungtx1.probes$probe, "!", "")
+hlungtx1.probes <- unique(hlungtx1.probes[order(hlungtx1.probes$score, decreasing = TRUE),][, c(1,3)])
+hlungtx1.probes$score <- hlungtx1.ranks[as.numeric(row.names(hlungtx1.probes))]
+  
+  ## alternate way to pick it-ems out of perens (not used)
+# re <- "\\(([^()]+)\\)"
+# gsub(re, "\\1", str_extract_all(combo.all, re)[[2]])
