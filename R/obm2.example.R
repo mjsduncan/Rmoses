@@ -111,3 +111,6 @@ hlungtx1.probes$score <- hlungtx1.ranks[as.numeric(row.names(hlungtx1.probes))]
   ## alternate way to pick it-ems out of perens (not used)
 # re <- "\\(([^()]+)\\)"
 # gsub(re, "\\1", str_extract_all(combo.all, re)[[2]])
+
+
+`hc-ss-100k` <- read.csv("~/GitHub/Rmoses/results/hc-ss-m100000.csv")
