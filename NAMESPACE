@@ -1,2 +1,1 @@
-useDynLib(Rmoses)
 exportPattern("^[[:alpha:]]+")
