@@ -28,6 +28,7 @@ combo.v1m <- c(
 
 `hc-ss-100k` <- read.csv("~/GitHub/Rmoses/results/hc-ss-m100000.csv")
 
+library("lattice")
 xyplot(total_evals ~ time, data = `hc-ss-100k`)
 xyplot(deme_count + total_steps + num_evals/10 + new_instances/10 ~ time, data = `hc-ss-100k`, type = "l")
 xyplot(deme_count/5 + (16 + best_raw) + complexity ~ total_evals, data = `hc-ss-100k`, type = "l")
