@@ -89,6 +89,20 @@ combo.v3 <- c(
  , "-6 or(and(or(and(!$NM_000167_at !$NM_000190_at) !$XR_000645_at) !$NM_001632_at) !$NM_006456_at $XR_000963_at) "
 , "-6 or(and(or(and(!$NM_000190_at !$NM_000607_at) !$XR_000645_at) !$NM_001632_at) !$NM_006456_at $XR_000963_at) ")
 
+combo.sa <- moses("-j2 -W1 -u controls -Y sample -a sa --enable-fs=1 -m 1000000 ","hlungtx1_moses.csv")   # run moses on 2 cores sa algo
+
+# > combo.sa
+#  [1] "0 and(or(and(or(!$NM_001632_at $XM_942583_at) or(!$XM_942334_at !$XM_942389_at !$XM_944396_at !$XM_944795_at) !$NM_005554_at !$XM_931515_at !$XR_000645_at) and(!$NM_000190_at !$XM_944396_at) !$NM_006456_at $XM_942555_at $XR_000963_at) or($NM_004587_at $XM_937178_at !$XM_939750_at)) "
+#  [2] "-1 and(or(and(or(!$NM_001632_at $XM_942583_at) or(!$XM_942334_at !$XM_942389_at !$XM_944396_at !$XM_944795_at) !$NM_005554_at !$XM_931515_at !$XR_000645_at) and(!$NM_000190_at !$XM_944396_at) !$NM_006456_at $XM_942555_at $XR_000963_at) $NM_004587_at) "                                
+#  [3] "-1 or(and(or(!$NM_001632_at $XM_942583_at) or($XM_938127_at !$XM_942334_at !$XM_942389_at !$XM_944396_at !$XM_944795_at) $NM_004587_at !$NM_005554_at !$XM_931515_at !$XR_000645_at) and(!$NM_000190_at !$XM_944396_at) !$NM_006456_at $XM_942555_at $XR_000963_at) "                       
+#  [4] "-1 and(or(and(or(!$NM_001632_at $XM_934710_at $XM_942583_at) or(!$XM_942334_at !$XM_942389_at !$XM_944396_at !$XM_944795_at) !$NM_005554_at !$XM_931515_at !$XR_000645_at) and(!$NM_000190_at !$XM_944396_at) !$NM_006456_at $XM_942555_at $XR_000963_at) $NM_004587_at) "                  
+#  [5] "-1 and(or(and(or(!$NM_001632_at $XM_938127_at $XM_942583_at) or(!$XM_942334_at !$XM_942389_at !$XM_944396_at !$XM_944795_at) !$NM_005554_at !$XM_931515_at !$XR_000645_at) and(!$NM_000190_at !$XM_944396_at) !$NM_006456_at $XM_942555_at $XR_000963_at) $NM_004587_at) "                  
+#  [6] "-1 and(or(and(or(!$NM_001632_at $XM_938301_at $XM_942583_at) or(!$XM_942334_at !$XM_942389_at !$XM_944396_at !$XM_944795_at) !$NM_005554_at !$XM_931515_at !$XR_000645_at) and(!$NM_000190_at !$XM_944396_at) !$NM_006456_at $XM_942555_at $XR_000963_at) $NM_004587_at) "                  
+#  [7] "-1 and(or(and(or(!$NM_001632_at $XM_940791_at $XM_942583_at) or(!$XM_942334_at !$XM_942389_at !$XM_944396_at !$XM_944795_at) !$NM_005554_at !$XM_931515_at !$XR_000645_at) and(!$NM_000190_at !$XM_944396_at) !$NM_006456_at $XM_942555_at $XR_000963_at) $NM_004587_at) "                  
+#  [8] "-1 and(or(and(or(!$NM_001632_at $XM_942314_at $XM_942583_at) or(!$XM_942334_at !$XM_942389_at !$XM_944396_at !$XM_944795_at) !$NM_005554_at !$XM_931515_at !$XR_000645_at) and(!$NM_000190_at !$XM_944396_at) !$NM_006456_at $XM_942555_at $XR_000963_at) $NM_004587_at) "                  
+#  [9] "-1 and(or(and(or(!$NM_001632_at $XM_942389_at $XM_942583_at) or(!$XM_942334_at !$XM_942389_at !$XM_944396_at !$XM_944795_at) !$NM_005554_at !$XM_931515_at !$XR_000645_at) and(!$NM_000190_at !$XM_944396_at) !$NM_006456_at $XM_942555_at $XR_000963_at) $NM_004587_at) "                  
+# [10] "-1 and(or(and(or(!$NM_001632_at $XM_942583_at) or($NM_001632_at !$XM_942334_at !$XM_942389_at !$XM_944396_at !$XM_944795_at) !$NM_005554_at !$XM_931515_at !$XR_000645_at) and(!$NM_000190_at !$XM_944396_at) !$NM_006456_at $XM_942555_at $XR_000963_at) $NM_004587_at) "                  
+
 ## extract samples
 
 combo.all <- c(combo.v, combo.vm, combo.v1, combo.v1m, combo.v3, combo.v2)      # put all moses combo results in a vector
