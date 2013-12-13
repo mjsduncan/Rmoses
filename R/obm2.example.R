@@ -122,7 +122,7 @@ hlungtx1.probes$probe <- str_replace(hlungtx1.probes$probe, "!", "")
 hlungtx1.probes <- unique(hlungtx1.probes[order(hlungtx1.probes$score, decreasing = TRUE),][, c(1,3)])
 hlungtx1.probes$score <- hlungtx1.ranks[as.numeric(row.names(hlungtx1.probes))]
   
-  ## alternate way to pick it-ems out of perens (not used)
+  ## alternate way to pick items out of perens (not used)
 # re <- "\\(([^()]+)\\)"
 # gsub(re, "\\1", str_extract_all(combo.all, re)[[2]])
 
