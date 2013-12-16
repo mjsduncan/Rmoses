@@ -1,6 +1,8 @@
 ## exploration of GEO data sets for comparing samples of pigs and humans
 
-library(GEOmetadb, GEOquery, stringr)
+library(GEOmetadb)
+library(GEOquery)
+library(stringr)
 
 # download and connect to metadata sql file
 

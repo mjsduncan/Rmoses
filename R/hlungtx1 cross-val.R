@@ -14,6 +14,19 @@ flds <- createDataPartition(as.factor(hlungtx1[,1]), times = 10, p = .8, list = 
 write.csv(hlungtx1[flds[[1]],], "hlf1.csv", row.names = FALSE)
 hlf1_v <- hlungtx1[-flds[[1]],]
 
+makeMpartitions <- function(data, k = 10, control = 1, ...){
+  require(caret)
+  namestr <- deparse(substitute(data))
+  flds <- createDataPartition(as.factor(data[, control]), times = k, ...)
+  out <- vector("list", k)
+  names(out) <- paste(namestr, "_f", 1:k, sep = "")
+  for(i in 1:k){
+    write.csv(data[flds[[i]],], paste(names(out)[i], ".csv", sep = ""), row.names = FALSE)
+    out[[i]] <- data[-flds[[i]],]
+  }
+  return(out)
+}
+
 # run moses on training files and extract combo strings & ranks
 hlf1_r <- moses("-j4 -W1 -u controls -Y sample --hc-crossover=1 -m 500000 --enable-fs=1 -G 1 -f hlf1.log","hlf1.csv") 
 hlf1.combo <- str_trim(str_split_fixed(hlf1_r, " ", 2)[,2])
@@ -30,7 +43,7 @@ hlf1.results <- matrix(nrow = m,ncol = n, dimnames = list(paste("C", 1:m, sep = 
 hlf1.results <- rbind(controls,hlf1.results)
 
 # results are the same for all combo programs in hlf1
-confusionMatrix(as.factor(hlf1.results[2,]), as.factor(hlf1.results[1,]), prev = .32)
+hlf1.metrics <- confusionMatrix(as.factor(hlf1.results[2,]), as.factor(hlf1.results[1,]), prev = .32)
 # Confusion Matrix and Statistics
 # 
 #           Reference
