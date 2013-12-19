@@ -1,5 +1,5 @@
 #  wrapper/interface functions for moses binary
-
+##### generate k-fold cross validation run
 #make k-fold partitions of moses data set files and list of testing dfs
 makeMpartitions <- function(data, k = 10, control = 1, ...){
   require(caret)
@@ -7,12 +7,15 @@ makeMpartitions <- function(data, k = 10, control = 1, ...){
   flds <- createDataPartition(as.factor(data[, control]), times = k, ...)
   out <- vector("list", k)
   names(out) <- paste(namestr, "_f", 1:k, sep = "")
+  names(flds) <- names(out)
   for(i in 1:k){
     write.csv(data[flds[[i]],], paste(names(out)[i], ".csv", sep = ""), row.names = FALSE)
     out[[i]] <- data[-flds[[i]],]
   }
+  write.csv(as.data.frame(flds), paste(namestr, "_test", ".csv", sep = ""), row.names = FALSE)
   return(out)
 }
+
 # run moses on a file
 moses <- function( flags = "", DSVfile = "", output = TRUE) {
   if(flags == "help") flags <- "--help"          # moses(help) -> moses --help
@@ -31,7 +34,7 @@ runMfolder <- function(flags = "",dir = getwd(),  output = TRUE) {
 }
 
 # make df of features from combo strings
-combo2flist <- function(cstr, rank) {
+combo2flist <- function(cstr, rank, tag = "") {
 require(stringr)
 probe <- str_replace_all(cstr, "and+", "")
 probe <- str_replace_all(probe, "or+", "")
@@ -40,7 +43,7 @@ flist <- str_split(probe, pattern = " ")
 ranks <- rep(rank, vapply(flist, length, integer(1)))
 fdf <- data.frame(feature = unlist(flist), score = ranks, stringsAsFactors = FALSE)
 fdf$low <- str_detect(fdf$feature, "!")
-fdf$combo <- rep(seq(length(probe)), vapply(flist, length, integer(1)))
+fdf$combo <- paste(rep(seq(length(probe)), vapply(flist, length, integer(1))), tag, sep = "")
 fdf$feature <- str_replace(fdf$feature, "!", "")
 fdf <- fdf[!duplicated(fdf[[1]]),]
 return(fdf)
@@ -58,7 +61,7 @@ out[[3]] <- rank
 return(out)
 }
 
-###evaluate combo string vectors
+##### evaluate combo string vectors
 # translate n >=2 argument boolean operators
 and -> function(x) Reduce("&", x)
 or -> function(x) Reduce("|", x)
@@ -76,9 +79,16 @@ evalstr -> function(str){
 }
 
 #put confusionMatrix outputs in table
-cm2df <- function(cmlist) {
-  vapply()
+cmv <- function(cm) {
+  c('[['(cm, 3)[c(1, 3:6)], '[['(cm, 4))
 }
+
+cml2df <- function(cmlist) {
+  out <- t(vapply(cmlist, cmv, numeric(12)))
+  row.names(out) <- paste("C", seq(1, length(cmlist)), sep = "")
+  return(as.data.frame(out))
+}
+
 # evaluate translated combo programs on test dfs and return result lists
 testCstring <- function(rlist, testdf, concol = 1, conrat) {
   control <- testdf[[concol]]
@@ -94,7 +104,9 @@ testCstring <- function(rlist, testdf, concol = 1, conrat) {
       as.factor(results[i,]), as.factor(control), prev = conrat)
   }
   detach(testdf)
-  return(list(result = rbind(results, control), score = metrics, combo = rlist[[1]], ranks = rlist[[3]], features = rlist[[2]]))
+  metrics <- cml2df(metrics)
+  results <- as.data.frame(rbind(results, control))
+  return(list(result = results, score = metrics, combo = rlist[[1]], ranks = rlist[[3]], features = rlist[[2]]))
 }
 
 # evaluate list of combo strings & compute catagorization metrics
@@ -103,6 +115,39 @@ testClist <- function(clist, tdatlist, cc_ratio = .5) {
  return(Map(testCstring, out, tdatlist, conrat = cc_ratio))
  }
 
+##### put running and validation together and generate summary results
+# extract the ith element from all list components
+getCombo <- function(rlist, c) {
+  out <- list(rlist$combo[c], rlist$ranks[c], rlist$score[c,])
+  names(out) <- c("combo", "rank", "score")
+  return(out)
+}
+
+# get indexes of all of the n highest m scoring combos from score df
+bestIndex <- function(df, n = 1, col = 1) {
+  rindex <- order(df[[col]], decreasing = TRUE)
+  rvalues <- unique(df[[col]][rindex])
+  which(df[[col]] >= rvalues[n])
+}
+
+# combine fold results (results df is thrown out)
+combineFolds <- function(rlist) {
+  out <- tail(rlist[[1]], -1)
+  for(i in seq(2, length(rlist))) {
+    out[[1]] <- rbind(out[[1]], rlist[[i]][[2]])
+    out[[2]] <- c(out[[2]], rlist[[i]][[3]])
+    out[[3]] <- c(out[[3]], rlist[[i]][[4]])
+  }
+  return(out)
+}
+# get all the n best m-scoring combo programs from a k-fold validation set
+bestCombos <- function(rlist, n = 1, col = 1) {
+  allfolds <- combineFolds(rlist)
+  best <- bestIndex(allfolds$score, n = 1, col = 1)
+  out <- getCombo(allfolds, best)
+  out[["features"]] <- combo2flist(out$combo, out$rank)
+  return(out)
+}
 
 # TODO:  guided menu system to set moses flags for data appropriate analysis
 
