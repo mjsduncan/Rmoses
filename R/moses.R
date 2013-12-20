@@ -12,7 +12,7 @@ makeMpartitions <- function(data, k = 10, control = 1, ...){
     write.csv(data[flds[[i]],], paste(names(out)[i], ".csv", sep = ""), row.names = FALSE)
     out[[i]] <- data[-flds[[i]],]
   }
-  write.csv(as.data.frame(flds), paste(namestr, "_test", ".csv", sep = ""), row.names = FALSE)
+  out[["fold_index"]] <- as.data.frame(flds)
   return(out)
 }
 
@@ -26,6 +26,7 @@ moses <- function( flags = "", DSVfile = "", output = TRUE) {
 
 # run moses on a directory
 runMfolder <- function(flags = "",dir = getwd(),  output = TRUE) {
+  require(stringr)
   files <- list.files(path = dir)
   out <- vector("list", length(files))
   names(out) <- paste(word(files, sep = fixed(".")), "_Mout", sep = "")
@@ -34,6 +35,7 @@ runMfolder <- function(flags = "",dir = getwd(),  output = TRUE) {
 }
 
 # make df of features from combo strings
+# TODO:  implement tagging to track fold of combo program
 combo2flist <- function(cstr, rank, tag = "") {
 require(stringr)
 probe <- str_replace_all(cstr, "and+", "")
@@ -55,10 +57,29 @@ require(stringr)
 out <- vector("list", 3)
 names(out) <- c("combo", "features", "ranks")
 out[[1]] <- str_trim(str_split_fixed(ostr, " ", 2)[,2])
-rank <- as.numeric(str_split_fixed(hlf1_r, " ", 2)[,1])
+rank <- as.numeric(str_split_fixed(ostr, " ", 2)[,1])
 out[[2]] <- combo2flist(out[[1]], rank)
 out[[3]] <- rank
 return(out)
+}
+
+### extract moses output from log files
+# get last n lines from file
+lastNlines <- function(filename, N = 12, drop = 2) {
+  ## filename is of mode character
+  out <- system(sprintf("wc -l %s", filename), intern=TRUE)
+  n <- as.integer(sub(sprintf("[ ]*([0-9]+)[ ]%s", filename), "\\1",out))
+  print(n)
+  scan(filename,what="",skip=n - N, nlines=N - drop,sep="\n", quiet=TRUE)
+}
+
+getMout <- function(dir = ".", type = ".log", n = 12, d = 2) {
+  lfiles <- list.files(path = dir, pattern = type)
+  out <- vector("list", length(lfiles))
+  for(i in seq_along(lfiles)) {
+    out[[i]] <- lastNlines(lfiles[i], N = n, drop = d)
+  }
+  return(out)
 }
 
 ##### evaluate combo string vectors
@@ -68,8 +89,8 @@ or -> function(x) Reduce("|", x)
 
 # turn combo string vector into list of R function combinations
 combo.edit <- function(str) {
-  mc_ops <- list(c("(", "(list("), c(")", "))"), c(" ", ", "),c("$", ""))
-  for(i in seq_along(mc_ops)) str <- str_replace_all(str, fixed(mc_ops[[i]][1]), mc_ops[[i]][2])
+  mc_ops <- list(c("true", "TRUE"), c("(", "(list("), c(")", "))"), c(" ", ", "),c("$", ""))
+  for(i in seq_along(mc_ops)) str <- str_trim(str_replace_all(str, fixed(mc_ops[[i]][1]), mc_ops[[i]][2]))
   str
 }
 
@@ -100,8 +121,10 @@ testCstring <- function(rlist, testdf, concol = 1, conrat) {
   metrics <- vector("list", m)
   for(i in 1:m){
     results[i,] <- as.numeric(evalstr(combo.edit(combo[i])))
+    fresult <- as.factor(results[i,])
+    levels(fresult) <- c("0", "1")
     metrics[[i]] <- confusionMatrix(
-      as.factor(results[i,]), as.factor(control), prev = conrat)
+      fresult, as.factor(control), prev = conrat)
   }
   detach(testdf)
   metrics <- cml2df(metrics)
@@ -112,6 +135,7 @@ testCstring <- function(rlist, testdf, concol = 1, conrat) {
 # evaluate list of combo strings & compute catagorization metrics
 testClist <- function(clist, tdatlist, cc_ratio = .5) {
  out <- lapply(clist, Mout2str)
+ tdatlist[["fold_index"]] <- NULL
  return(Map(testCstring, out, tdatlist, conrat = cc_ratio))
  }
 
@@ -141,13 +165,21 @@ combineFolds <- function(rlist) {
   return(out)
 }
 # get all the n best m-scoring combo programs from a k-fold validation set
-bestCombos <- function(rlist, n = 1, col = 1) {
+bestCombos <- function(rlist, N = 1, metric = 1) {
   allfolds <- combineFolds(rlist)
-  best <- bestIndex(allfolds$score, n = 1, col = 1)
+  best <- bestIndex(allfolds$score, n = N, col = metric)
   out <- getCombo(allfolds, best)
   out[["features"]] <- combo2flist(out$combo, out$rank)
   return(out)
 }
+
+# combine 2 feature dfs
+merge2Fdfs <- function(df1, df2) {
+  df <- rbind(df1, df2)
+  df[!duplicated(df[c(1,3),]),]
+}
+
+mergeFdfs <- function(dfL) Reduce(merge2Fdfs, dfL)
 
 # TODO:  guided menu system to set moses flags for data appropriate analysis
 
