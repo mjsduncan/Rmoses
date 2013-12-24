@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #  wrapper/interface functions for moses binary
 ##### generate k-fold cross validation run
 #make k-fold partitions of moses data set files and list of testing dfs
