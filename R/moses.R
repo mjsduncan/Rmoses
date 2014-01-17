@@ -1,6 +1,5 @@
-<<<<<<< HEAD
-#  wrapper/interface functions for moses binary
-##### generate k-fold cross validation run
+##### wrapper/interface functions for moses binary
+### generate k-fold cross validation run
 #make k-fold partitions of moses data set files and list of testing dfs
 makeMpartitions <- function(data, k = 10, control = 1, ...){
   require(caret)
@@ -106,7 +105,7 @@ cmv <- function(cm) {
 }
 
 cml2df <- function(cmlist) {
-  out <- t(vapply(cmlist, cmv, numeric(12)))
+  out <- t(vapply(cmlist, cmv, numeric(13)))
   row.names(out) <- paste("C", seq(1, length(cmlist)), sep = "")
   return(as.data.frame(out))
 }
