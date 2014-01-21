@@ -12,6 +12,7 @@ med.normalize <- function(mat) {
   return(out)
 }
 
+# binary median human lung data sets
 load("~/github/openbiomind2/control datasets/Lung/binarizedMedianGSE47460GPL6480.RData")
 load("~/github/openbiomind2/control datasets/Lung/binarizedMedianGSE47460GPL14550.RData")
 hlung1 <- binarizedMedianGSE47460GPL6480
@@ -83,18 +84,6 @@ hplung <- read.csv("~/github/openbiomind2/results/tissue_samples/hplung.csv", st
 row.names(hplung) <- hplung[,1]
 hplung[[1]] <- NULL
 hplung <- replace(hplung, is.na(hplung), rbinom(1, 1, .05))
-
-# full run using .5 training/testing ratio
-setwd("~/github/mosesData/hplung-hx5")
-hplung.test <- makeMpartitions(hplung, p = .5)
-hplung_hx5 <- runMfolder("-j4 -W1 -u is.human -Y sample --hc-crossover=1 -m 100000 -G 1 --enable-fs=1")
-hlung_hx5 <- testClist(hplung_hx5, hplung.test, 0.2653061)
-hlung_hx5.best <- bestCombos(hlung_hx5)
-write.csv(hlung_hx5.best$feataures, file = "~/github/openbiomind2/results/tissue_samples/hplungBestFeatures1.csv")
-# vs strait from the expression set
-require(GEOquery)
-hl.es <- getGEO(GEO = "GSE47460", destdir = '~/github/openbiomind2/getgeo', AnnotGPL = F)
-hl.fd <- fData(tx1.es[[1]])
 
 # run aracne
 require(BUS)

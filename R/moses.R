@@ -27,7 +27,7 @@ moses <- function( flags = "", DSVfile = "", output = TRUE) {
 # run moses on a directory
 runMfolder <- function(flags = "",dir = getwd(),  output = TRUE) {
   require(stringr)
-  files <- list.files(path = dir)
+  files <- list.files(path = dir)[!str_detect(list.files(path = dir), fixed(".log"))]
   out <- vector("list", length(files))
   names(out) <- paste(word(files, sep = fixed(".")), "_Mout", sep = "")
   for(i in seq_along(files)) out[[i]] <- moses(flags, files[i])
@@ -84,8 +84,8 @@ getMout <- function(dir = ".", type = ".log", n = 12, d = 2) {
 
 ##### evaluate combo string vectors
 # translate n >=2 argument boolean operators
-and -> function(x) Reduce("&", x)
-or -> function(x) Reduce("|", x)
+and <- function(x) Reduce("&", x)
+or <- function(x) Reduce("|", x)
 
 # turn combo string vector into list of R function combinations
 combo.edit <- function(str) {
@@ -95,7 +95,7 @@ combo.edit <- function(str) {
 }
 
 # evaluate translated expression
-evalstr -> function(str){
+evalstring <- function(str){
   eval(parse(text=str))
 }
 
@@ -120,7 +120,7 @@ testCstring <- function(rlist, testdf, concol = 1, conrat) {
   results <- matrix(nrow = m,ncol = n, dimnames = list(paste("C", 1:m, sep = ""), row.names(testdf)))
   metrics <- vector("list", m)
   for(i in 1:m){
-    results[i,] <- as.numeric(evalstr(combo.edit(combo[i])))
+    results[i,] <- as.numeric(evalstring(combo.edit(combo[i])))
     fresult <- as.factor(results[i,])
     levels(fresult) <- c("0", "1")
     metrics[[i]] <- confusionMatrix(
