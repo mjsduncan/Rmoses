@@ -30,5 +30,5 @@ mashed.features.hplung <- mergeFdfs(list(hlung_hx5.best[["features"]], hlung_hcr
 best.features.hplung <- as.data.frame(cbind(mashed.features.hplung[[1]], mashed.features.hplung[[3]], mashed.features.hplung[[2]]), stringsAsF = FALSE)
 names(best.features.hplung) <- c("probes", "low_expression", "combo_rank")
 best.features.hplung <- unique(best.features.hplung)
-write.csv(best.features.hplung, "~/github/mosesData/hplungfeatures.csv", row.names = FALSE)
+write.csv(best.features.hplung, "~/github/openbiomind2/results/tissue_samples/hplungfeatures.csv", row.names = FALSE)
 

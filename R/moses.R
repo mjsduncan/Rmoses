@@ -182,6 +182,18 @@ merge2Fdfs <- function(df1, df2) {
 
 mergeFdfs <- function(dfL) Reduce(merge2Fdfs, dfL)
 
+## apply median norm to object
+
+med.normalize <- function(mat) {
+  out <- mat
+  for (i in seq(dim(mat)[2])) { 
+    vect <- mat[,i]
+    med <- median(vect, na.rm = TRUE)
+    out[,i] <- as.numeric(vect >= med)
+  }
+  return(out)
+}
+
 # TODO:  guided menu system to set moses flags for data appropriate analysis
 
 # #######  combo -> R failures
