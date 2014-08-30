@@ -36,7 +36,7 @@ runMfolder <- function(flags = "",dir = getwd(),  output = TRUE) {
 }
 
 # make df of features from combo strings
-# TODO:  implement tagging to track fold of combo program
+# TODO:  implement tagging to track fold of combo program; count the total number of feature occurances.
 combo2flist <- function(cstr, rank, tag = "") {
 require(stringr)
 probe <- str_replace_all(cstr, "and+", "")
@@ -53,6 +53,7 @@ return(fdf)
 }
 
 # make combo strings and feature dfs from moses output
+# TODO: can rank be other, better moses socring output
 Mout2str <- function(ostr) {
 require(stringr)
 out <- vector("list", 3)
@@ -60,6 +61,34 @@ names(out) <- c("combo", "features", "ranks")
 out[[1]] <- str_trim(str_split_fixed(ostr, " ", 2)[,2])
 rank <- as.numeric(str_split_fixed(ostr, " ", 2)[,1])
 out[[2]] <- combo2flist(out[[1]], rank)
+out[[3]] <- rank
+return(out)
+}
+
+# make df of features from combo strings: calculate count of feature in all combo strings "combo count"
+combo2flist2 <- function(cstr) {
+require(stringr)
+probe <- str_replace_all(cstr, "and+", "")
+probe <- str_replace_all(probe, "or+", "")
+probe <- str_replace_all(probe, "[()$]+", "")
+flist <- str_split(probe, pattern = " ")
+fdf <- data.frame(feature = unlist(flist), stringsAsFactors = FALSE)
+fdf$low <- str_detect(fdf$feature, "!")
+fdf$combo <- paste(rep(seq(length(probe)), vapply(flist, length, integer(1))), sep = "")
+fdf$feature <- str_replace(fdf$feature, "!", "")
+fdf <- aggregate(rep(1, dim(fdf)[1]) ~ feature + !low, data = fdf, length)
+names(fdf) <- c("feature", "upregulated", "combo count")
+return(fdf[order(fdf[, 1]),])
+}
+
+# make combo strings and feature dfs using combo2flist2
+Mout2str2 <- function(ostr) {
+require(stringr)
+out <- vector("list", 3)
+names(out) <- c("combo", "features", "ranks")
+out[[1]] <- str_trim(str_split_fixed(ostr, " ", 2)[,2])
+rank <- as.numeric(str_split_fixed(ostr, " ", 2)[,1])
+out[[2]] <- combo2flist2(out[[1]])
 out[[3]] <- rank
 return(out)
 }
