@@ -1,4 +1,4 @@
- ### load bed stuy moses results
+ ### load bed stuy moses results  TODO:  R.utils::use attachLocally
 library("stringr")
 setwd("~/GitHub/test_run2")
 

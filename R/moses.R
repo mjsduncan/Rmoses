@@ -1,7 +1,7 @@
 #  wrapper/interface functions for moses binary
 
 ##### generate k-fold cross validation run
-#make k-fold partitions of moses data set files and list of testing dfs
+#make k 2-fold partitions of moses data set files and list of testing dfs
 makeMpartitions <- function(data, k = 10, control = 1, ...){
   require(caret)
   namestr <- deparse(substitute(data))

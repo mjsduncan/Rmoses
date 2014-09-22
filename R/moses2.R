@@ -40,8 +40,7 @@ runMfolder <- function(flags = "", dir = getwd(),  output = TRUE) {
 # default split = TRUE outputs 2 data frames in a list: $up & $down, with 2 columns:  feature (string), Freq (count)
 # $up are unmodified combo variables and $down are ! (not) combo variables
 # set split = FALSE to output single dataframe with column "level" = "up" or "down"
-
-combo2fcount <- function(combo, stripX = FALSE, split = TRUE) {
+combo2fcount <- function(combo, stripX = FALSE, split = FALSE) {
   out <- vector("list", 2)
   names(out) <- c("up", "down")
   combo <- gsub("and|or|[()$]", "", combo)
@@ -53,35 +52,51 @@ combo2fcount <- function(combo, stripX = FALSE, split = TRUE) {
   if(split) return(lapply(out, function(x) x[order(x$Freq, decreasing = TRUE),]))
   out$up$level <- "up"
   out$down$level <- "down"
-  rbind(out$up, out$down)[order(rbind(out$up, out$down)$Freq, decreasing = TRUE),]
+  out <- rbind(out$up, out$down)[order(rbind(out$up, out$down)$Freq, decreasing = TRUE),]
+  out[order(out$feature, out$Freq),]
 }
 
-# save combined combo2fcount result to csv file with option to return value (ret = TRUE)
-combo2csv <- function(combo, name = deparse(substitute(combo)), dir = ".", strip = FALSE, ret = FALSE) {
+# calculate Escore: for down make count negative and sum by feature
+Escore <- function(c2fc, add = TRUE) {
+  if(!identical(names(c2fc)[1:3], c("feature", "Freq", "level"))) return("error: input is not output of combo2fcount(... split = FALSE)")
+  out <- data.frame(feature = c2fc$feature, Escore = ifelse(c2fc$level == "down", -c2fc$Freq, c2fc$Freq), stringsAsFactors = FALSE)
+  if(add) out <- aggregate(. ~ feature, data = out, function(x) sum(abs(x))) else
+    out <- aggregate(. ~ feature, data = out, sum)
+  if(length(c2fc) > 3) {
+    out <- merge(out, c2fc[, c(1, 4:length(c2fc))], by = "feature")
+                        names(out) <- c("feature", "Escore", names(c2fc)[4:length(c2fc)])
+  }
+unique(out[order(-abs(out$Escore), out$feature),])
+}
+
+# save combined combo2fcount result to csv file with option to return value (ret = TRUE) and save with deleted hi-lo features 
+combo2Fcsv <- function(combo, name = deparse(substitute(combo)), dir = ".", strip = FALSE, ret = FALSE, Escore = FALSE) {
+  name <- paste(name, "csv", sep = ".")
   out <- combo2fcount(combo, stripX = strip, split = FALSE)
+  if(Escore) out <- Escore(out)
   write.csv(out, file = paste(dir, name, sep = "/"), row.names = FALSE)
   if(ret) return(out)
 }
 
 # make combo strings and feature dfs from moses output.  score = TRUE returns moses scoring data in brackets
 # TODO: function to put moses scoring data into data frame, check GEO meta data functions?
-moses2combo <- function(mout, score = FALSE) {
+moses2combo <- function(mout, score = FALSE, trim = 5) {
   require(stringr)
-  mout <- str_split_fixed(mout, fixed("["), 2)
-  out <- str_trim(str_sub(mout[, 1], 5, -2))    # this will fail of moses score is ,<= -10
+  mout <- str_split_fixed(unlist(mout), fixed("["), 2)
+  out <- str_trim(str_sub(mout[, 1], trim, -1))    # this will fail silently if moses score is ,<= -10
   if(score) return(paste("[", mout[, 2], sep = ""))
   return(out)
 }
 
 # make combo strings and feature dfs using moses2combo and combo2fcount
-Mout2str <- function(mout, strip = FALSE) {
-require(stringr)
-out <- vector("list", 3)
-names(out) <- c("combo", "features", "scores")
-out[[1]] <- moses2combo(mout)
-out[[2]] <- combo2fcount(out[[1]], stripX = strip, split = FALSE)
-out[[3]] <- moses2combo(mout, score = TRUE)
-return(out)
+Mout2str <- function(mout, strip = FALSE, trim = 5) {
+  require(stringr)
+  out <- vector("list", 3)
+  names(out) <- c("combo", "features", "scores")
+  out[[1]] <- moses2combo(mout)
+  out[[2]] <- combo2fcount(out[[1]], stripX = strip, split = FALSE)
+  out[[3]] <- moses2combo(mout, score = TRUE, trim = trim)
+  return(out)
 }
 
 ### extract moses output from log files
@@ -94,11 +109,11 @@ lastNlines <- function(filename, N = 12, drop = 2) {
   scan(filename,what="",skip=n - N, nlines=N - drop,sep="\n", quiet=TRUE)
 }
 
-getMout <- function(dir = ".", type = ".log", n = 12, d = 2) {
+getMout <- function(dir = ".", type = ".log", lines = 12, drop = 2) {
   lfiles <- list.files(path = dir, pattern = type)
   out <- vector("list", length(lfiles))
   for(i in seq_along(lfiles)) {
-    out[[i]] <- lastNlines(lfiles[i], N = n, drop = d)
+    out[[i]] <- lastNlines(lfiles[i], N = lines, drop = drop)
   }
   return(out)
 }
