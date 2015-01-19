@@ -2,6 +2,7 @@
 
 ##### generate k-fold cross validation run
 #make k 2-fold partitions of moses input dfs, save training sets, and return list of testing dfs and df of column indices 
+# TODO:  add checks & warnings when writing over files
 makeMpartitions <- function(data, k = 10, control = 1, dir = "./", ...){
   require(caret)
   namestr <- deparse(substitute(data))
@@ -22,7 +23,7 @@ moses <- function( flags = "", DSVfile = "", output = TRUE) {
   if(flags == "help") flags <- "--help"          # moses(help) -> moses --help
   if(flags == "version")  flags <- "--version"    # moses() -> moses --version
   if(DSVfile != "") flags <- paste("--input-file", DSVfile, "--log-file", paste(word(DSVfile, sep = fixed(".")), ".log", sep = ""), flags)
-  system2("moses", args=flags, stdout = output)
+  system2("/home/biocog/opencog/build/opencog/learning/moses/main/moses", args=flags, stdout = output)
 }
 
 # run moses on all csv files in a directory.  "output" argument can be a file name.
@@ -30,7 +31,7 @@ runMfolder <- function(flags = "", dir = getwd(),  output = TRUE) {
   require(stringr)
   files <- list.files(path = dir)[str_detect(list.files(path = dir), "csv$")]
   out <- vector("list", length(files))
-  names(out) <- paste(word(files, sep = fixed(".")), "_Mout", sep = "")
+  names(out) <- word(files, sep = fixed("."))
   for(i in seq_along(files)) out[[i]] <- moses(flags, files[i], output)
   return(out)
 }
@@ -80,22 +81,30 @@ combo2Fcsv <- function(combo, name = deparse(substitute(combo)), dir = ".", stri
 
 # make combo strings and feature dfs from moses output.  score = TRUE returns moses scoring data in brackets
 # TODO: function to put moses scoring data into data frame, check GEO meta data functions?
-moses2combo <- function(mout, score = FALSE, trim = 5) {
+moses2combo <- function(mout) {
   require(stringr)
-  mout <- str_split_fixed(unlist(mout), fixed("["), 2)
-  out <- str_trim(str_sub(mout[, 1], trim, -1))    # this will fail silently if moses score is ,<= -10
-  if(score) return(paste("[", mout[, 2], sep = ""))
+  if(length(grep("\\[", mout[[1]][1])) == 0) {
+  	mout <- lapply(mout, function(x) str_split_fixed(x, fixed(" "), 2))
+  	out <- list(combo = lapply(mout, function(x) str_trim(x[, 2])), score = lapply(mout, function(x) x[, 1]))
+  	return(out)
+  }
+  mout <- lapply(mout, function(x) str_split_fixed(x, fixed("["), 2))
+  score <- lapply(mout, function(x) x[, 2])  # TODO turn score string to named vector
+  mout <- lapply(mout, function(x) x[, 1])
+  mout <- lapply(mout, function(x) str_split_fixed(x, fixed(" "), 2))
+  out <- list(combo = lapply(mout, function(x) str_trim(x[, 2])), score = score)
   return(out)
 }
 
 # make combo strings and feature dfs using moses2combo and combo2fcount
-Mout2str <- function(mout, strip = FALSE, trim = 5) {
+parseMout <- function(mout, strip = FALSE) {
   require(stringr)
+  m2c <- moses2combo(mout)
   out <- vector("list", 3)
-  names(out) <- c("combo", "features", "scores")
-  out[[1]] <- moses2combo(mout)
+  names(out) <- c("combo", "features", "score")
+  out[[1]] <- m2c[["combo"]]
   out[[2]] <- combo2fcount(out[[1]], stripX = strip, split = FALSE)
-  out[[3]] <- moses2combo(mout, score = TRUE, trim = trim)
+  out[[3]] <- m2c[["score"]]
   return(out)
 }
 
@@ -145,7 +154,7 @@ or <- function(x) Reduce("|", x)
 combo.edit <- function(str) {
   mc_ops <- list(c("true", "TRUE"), c("(", "(list("), c(")", "))"), c(" ", ", "),c("$", ""))
   for(i in seq_along(mc_ops)) str <- str_trim(str_replace_all(str, fixed(mc_ops[[i]][1]), mc_ops[[i]][2]))
-  str
+  return(str)
 }
 
 # evaluate translated expression
@@ -160,37 +169,34 @@ cmv <- function(cm) {
 
 cml2df <- function(cmlist) {
   out <- t(vapply(cmlist, cmv, numeric(13)))
-  row.names(out) <- paste("C", seq(1, length(cmlist)), sep = "")
   return(as.data.frame(out))
 }
 
-# evaluate translated combo programs on test dfs and return result lists using caret::confusionMatrix
-testCstring <- function(rlist, testdf, concol = 1, conrat) {
-  control <- testdf[[concol]]
-  combo <- rlist[[1]]
-  n <- length(control)
+# evaluate combos from output of  moses2combo() on test dfs and return result lists using caret::confusionMatrix
+testCstring <- function(combos, testdf, casecol = 1, caserat) {
+  case <- testdf[[casecol]]
+  n <- length(case)
   attach(testdf)
-  m <- length(combo)
-  results <- matrix(nrow = m,ncol = n, dimnames = list(paste("C", 1:m, sep = ""), row.names(testdf)))
+  m <- length(combos)
+  results <- matrix(nrow = m,ncol = n, dimnames = list(sapply(combos, as.name), row.names(testdf)))
   metrics <- vector("list", m)
   for(i in 1:m){
-    results[i,] <- as.numeric(evalstring(combo.edit(combo[i])))
+    results[i,] <- as.numeric(evalstring(combo.edit(combos[i])))
     fresult <- as.factor(results[i,])
-    levels(fresult) <- c("0", "1")
-    metrics[[i]] <- caret::confusionMatrix(
-      fresult, as.factor(control), prev = conrat)
+#     levels(fresult) <- c("0", "1")
+    metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = caserat)
   }
   detach(testdf)
   metrics <- cml2df(metrics)
-  results <- as.data.frame(rbind(results, control))
-  return(list(result = results, score = metrics, combo = rlist[[1]], Mscores = rlist[[3]], features = rlist[[2]]))
+  rownames(metrics) <- rownames(results)
+  results <- as.data.frame(rbind(results, case))
+  return(list(result = results, score = metrics))
 }
 
 # evaluate list of combo strings & compute catagorization metrics.  "cc_ratio" is cases/1's over cases + controls/0's
 testClist <- function(clist, tdatlist, cc_ratio = .5) {
- out <- lapply(clist, Mout2str)
  tdatlist[["fold_index"]] <- NULL
- return(Map(testCstring, out, tdatlist, conrat = cc_ratio))
+ out <- Map(testCstring, clist[order(names(clist))], tdatlist[order(names(tdatlist))], caserat = cc_ratio)
  }
 
 ##### put training and validation together and generate summary results
@@ -240,4 +246,22 @@ med.normalize <- function(mat) {
   }
   return(out)
 }
+
+name2col <- function(df, name = "name") {
+	df <- cbind(rownames(df), df, stringsAsFactors = FALSE)
+	rownames(df) <- NULL
+	names(df)[1] <- name
+	return(df)
+}
+
+col2name <- function(df, col = 1) {
+	names <- df[[col]]
+	tics <- grepl("`", names, fixed = TRUE)
+	names[tics] <- sapply(substr(names[tics], 2, nchar(names) - 1), as.name)
+	names[!tics] <- sapply(names[!tics], as.name)
+	rownames(df) <- names
+	df[[col]] <- NULL
+	return(df)
+}
+
 
