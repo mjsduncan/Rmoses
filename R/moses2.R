@@ -23,7 +23,7 @@ moses <- function( flags = "", DSVfile = "", output = TRUE) {
   if(flags == "help") flags <- "--help"          # moses(help) -> moses --help
   if(flags == "version")  flags <- "--version"    # moses() -> moses --version
   if(DSVfile != "") flags <- paste("--input-file", DSVfile, "--log-file", paste(word(DSVfile, sep = fixed(".")), ".log", sep = ""), flags)
-  system2("/home/biocog/opencog/build/opencog/learning/moses/main/moses", args=flags, stdout = output)
+  system2("moses", args=flags, stdout = output)
 }
 
 # run moses on all csv files in a directory.  "output" argument can be a file name.
@@ -80,7 +80,10 @@ combo2Fcsv <- function(combo, name = deparse(substitute(combo)), dir = ".", stri
 }
 
 # make combo strings and feature dfs from moses output.  score = TRUE returns moses scoring data in brackets
-# TODO: function to put moses scoring data into data frame, check GEO meta data functions?
+# this won't work if moses is called with -S [ --output-score ] = 0
+mscore2vector <- function(str) eval(parse(text = paste0("c(", gsub("\\[| |.$", "", str), ")")))
+
+#convert list of vectors of moses output strings to list(combo = vector of combo strings, score = list of combo score component matrices)
 moses2combo <- function(mout) {
   require(stringr)
   if(length(grep("\\[", mout[[1]][1])) == 0) {
@@ -89,11 +92,12 @@ moses2combo <- function(mout) {
   	return(out)
   }
   mout <- lapply(mout, function(x) str_split_fixed(x, fixed("["), 2))
-  score <- lapply(mout, function(x) x[, 2])  # TODO turn score string to named vector
+  score <- lapply(mout, function(x) sapply(x[, 2], mscore2vector, USE.NAMES = FALSE))
   mout <- lapply(mout, function(x) x[, 1])
   mout <- lapply(mout, function(x) str_split_fixed(x, fixed(" "), 2))
-  out <- list(combo = lapply(mout, function(x) str_trim(x[, 2])), score = score)
-  return(out)
+  mout <- lapply(mout, function(x) str_trim(x[, 2]))
+  for(i in 1:length(score)) dimnames(score[[i]])[[2]] <- mout[[i]]
+  return(list(combo = mout, score = score))
 }
 
 # make combo strings and feature dfs using moses2combo and combo2fcount
@@ -105,25 +109,6 @@ parseMout <- function(mout, strip = FALSE) {
   out[[1]] <- m2c[["combo"]]
   out[[2]] <- combo2fcount(out[[1]], stripX = strip, split = FALSE)
   out[[3]] <- m2c[["score"]]
-  return(out)
-}
-
-### extract moses output from log files
-# get last n lines from file
-lastNlines <- function(filename, N = 12, drop = 2) {
-  ## filename is of mode character
-  out <- system(sprintf("wc -l %s", filename), intern=TRUE)
-  n <- as.integer(sub(sprintf("[ ]*([0-9]+)[ ]%s", filename), "\\1",out))
-  print(n)
-  scan(filename,what="",skip=n - N, nlines=N - drop,sep="\n", quiet=TRUE)
-}
-
-getMout <- function(dir = ".", type = ".log", lines = 12, drop = 2) {
-  lfiles <- list.files(path = dir, pattern = type)
-  out <- vector("list", length(lfiles))
-  for(i in seq_along(lfiles)) {
-    out[[i]] <- lastNlines(lfiles[i], N = lines, drop = drop)
-  }
   return(out)
 }
 
@@ -162,7 +147,7 @@ evalstring <- function(str){
   eval(parse(text=str))
 }
 
-#put confusionMatrix outputs in table
+# put confusionMatrix outputs in table
 cmv <- function(cm) {
   c('[['(cm, 3)[c(1, 3:6)], '[['(cm, 4))
 }
@@ -198,6 +183,65 @@ testClist <- function(clist, tdatlist, cc_ratio = .5) {
  tdatlist[["fold_index"]] <- NULL
  out <- Map(testCstring, clist[order(names(clist))], tdatlist[order(names(tdatlist))], caserat = cc_ratio)
  }
+
+### combine runs & extract best models
+# extract, combine & recast results matrices from testClist()
+name2col <- function(df, name = "name") {
+	df <- cbind(gsub("`", "", rownames(df), fixed = TRUE), df, stringsAsFactors = FALSE)
+	rownames(df) <- NULL
+	names(df)[1] <- name
+	return(df)
+}
+
+col2name <- function(df, col = 1) {
+	names <- df[[col]]
+	names <- gsub("`", "", names, fixed = TRUE)
+	rownames(df) <- names
+	df[[col]] <- NULL
+	return(df)
+}
+
+getResults <- function(testOut) {
+	out <- lapply(testOut, function(x) x[[1]])
+	out <- lapply(out, name2col)
+	return(out)
+}
+
+sortResults <- function(aggOut) {
+	out <- aggOut[c(grep("^case$", row.names(aggOut)), grep("^case$", row.names(aggOut), invert = TRUE)), gtools::mixedorder(names(aggOut))]
+ 	out <- cbind(out, score = apply(as.matrix(out), 1, function(x) vdist(out[1,], x)))
+	return(out[order(out$score, rowSums(is.na(out))),])
+}
+
+vdist <- function(x, y) {
+	if(length(x) != length(y)) return("vectors have different lengths")
+	sum(x != y, na.rm = TRUE)
+}
+
+aggScore <- function(aggOut) {
+	results <- aggOut[, -dim(aggOut)[2]]
+	case <- as.factor(unlist(results[1,]))
+	print(summary(case))
+	results <- results[-1,]
+	n <- dim(results)[1]
+	metrics <- vector("list", n)
+	for(i in 1:n){
+		fresult <- as.factor(unlist(results[i,]))
+#     levels(fresult) <- c("0", "1")
+		metrics[[i]] <- caret::confusionMatrix(fresult, case, prev = summary(case)[2] / summary(case)[1])
+	}
+	names(metrics) <- rownames(results)
+	return(cml2df(metrics))	
+}
+
+aggResults <- function(testOut) {
+	out <- reshape2::melt(getResults(testOut), "name", variable.name = "sample", value.name = "mutant")
+	out <- unique(out[-4])
+	out <- reshape2::dcast(out, name ~ sample)
+	out <- col2name(out)
+	out <- sortResults(out)
+	return(list(results = out, confusionMatrix = aggScore(out)))
+}
 
 ##### put training and validation together and generate summary results
 # extract the ith element from all list components
@@ -247,21 +291,21 @@ med.normalize <- function(mat) {
   return(out)
 }
 
-name2col <- function(df, name = "name") {
-	df <- cbind(rownames(df), df, stringsAsFactors = FALSE)
-	rownames(df) <- NULL
-	names(df)[1] <- name
-	return(df)
-}
-
-col2name <- function(df, col = 1) {
-	names <- df[[col]]
-	tics <- grepl("`", names, fixed = TRUE)
-	names[tics] <- sapply(substr(names[tics], 2, nchar(names) - 1), as.name)
-	names[!tics] <- sapply(names[!tics], as.name)
-	rownames(df) <- names
-	df[[col]] <- NULL
-	return(df)
-}
-
-
+# ### extract moses output from log files
+# # get last n lines from file
+# lastNlines <- function(filename, N = 12, drop = 2) {
+# 	## filename is of mode character
+# 	out <- system(sprintf("wc -l %s", filename), intern=TRUE)
+# 	n <- as.integer(sub(sprintf("[ ]*([0-9]+)[ ]%s", filename), "\\1",out))
+# 	print(n)
+# 	scan(filename,what="",skip=n - N, nlines=N - drop,sep="\n", quiet=TRUE)
+# }
+# 
+# getMout <- function(dir = ".", type = ".log", lines = 12, drop = 2) {
+# 	lfiles <- list.files(path = dir, pattern = type)
+# 	out <- vector("list", length(lfiles))
+# 	for(i in seq_along(lfiles)) {
+# 		out[[i]] <- lastNlines(lfiles[i], N = lines, drop = drop)
+# 	}
+# 	return(out)
+# }
