@@ -39,7 +39,7 @@ runMfolder <- function(flags = "", dir = getwd(),  output = TRUE) {
   return(out)
 }
 
-# make combo strings and feature dfs from moses output.  score = TRUE returns moses scoring data in brackets
+# extract combo strings and make feature dfs from moses output.  this works for --output-cscore 0 or 1
 # this won't work if moses is called with -S [ --output-score ] = 0
 mscore2vector <- function(str) eval(parse(text = paste0("c(", gsub("\\[| |.$", "", str), ")")))
 
@@ -62,26 +62,6 @@ moses2combo <- function(mout) {
   return(list(combo = mout, score = score))
 }
 
-# ## combine folds keeping worst score for duplicate combos
-# # extract duplicates
-# duplicateCombos <- function(clist) {
-# 	clist <- unlist(clist)
-# 	unique(clist[duplicated(clist)])
-# }
-# 
-# getIndex <- function(combo, clist) {
-# 	which(Reduce(rbind, clist) == combo, arr.ind = TRUE)
-# }
-# 
-# getScore <- function(Imatrix, sList, sIndex = 1) {
-# 	score <- apply(Imatrix, 1, function(x) sList[[x[1]]][sIndex, x[2]])
-# 	cbind(Imatrix, score = score)
-# }
-# 
-# deleteIndex <- function(m2cout) {
-# 	
-# }
-
 # make combo strings and feature dfs using moses2combo and combo2fcount
 combo2fcount <- function(combo, stripX = FALSE, split = FALSE) {
 	out <- vector("list", 2)
@@ -97,6 +77,8 @@ combo2fcount <- function(combo, stripX = FALSE, split = FALSE) {
 	out$down$level <- "down"
 	out <- rbind(out$up, out$down)[order(rbind(out$up, out$down)$Freq, decreasing = TRUE),]
 	out[order(out$Freq, out$feature, decreasing = TRUE),]
+  rownames(out) <- NULL
+  return(out)
 }
 
 parseMout <- function(mout, strip = FALSE) {

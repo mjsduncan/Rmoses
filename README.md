@@ -1,7 +1,7 @@
 ---
 output:
   html_document:
-    smart: no
+    smart: yes
 ---
 Rmoses
 ======
@@ -24,22 +24,41 @@ bioinformatics packages, and a combo program translator for application to new
 data sets in the R environment.
 
 ### run the moses binary
-**moses(flags = "", DSVfile = "", output = TRUE, ...)**  
-**flags **- string of flags to pass to the binary (see moses binary man page)  
-  example: "-j8 --balance 1 -m 100000 -W 1 --output-cscore 1 --result-count 100"  
-**DSVfile **- moses input file (see man page for possible formats)  
-**output, ... **- output value is passed to system2(stdout = ), which runs the binary.  
+`moses(flags = "", DSVfile = "", output = TRUE, ...)`  
+
+* **flags:**  string of flags to pass to the binary (see moses binary man page)  
+example: "-j8 --balance 1 -m 100000 -W 1 --output-cscore 1 --result-count 100"  
+* **DSVfile:**  moses input file (see man page for possible formats)  
+* **output, ...:**  output value is passed to system2(stdout = ), which runs the binary.  
 the default value (TRUE) returns a character vector of the moses output.  see the  
 system2() help page for other values and other system2() variable options.
 
 ### typical usage example
+**go to empty folder to hold moses input files and logs**  
+`setwd(~/path/to/moses_run)`  
+
 **make training partition csv files and list of corresponding testing partitions**  
-listOfTestingData <- makeMpartitions(mosesInput)  
+`listsOfDataPartitions <- makeMpartitions(mosesInput)`  
+
 **run moses on training sets**  
-mosesOutput <- runMfolder("-j8 --balance 1 -m 100000 -W 1 -u case --output-cscore 1 --result-count 100")  
+`mosesOutput <- runMfolder("-j8 --balance 1 -m 100000 -W 1 -u case --output-cscore 1 --result-count 100")`  
+
 **extract combo strings and scores from moses output**  
-combosNscores <- moses2combo(mosesOutput)  
+`combosNscores <- moses2combo(mosesOutput)`  
+
 **run combos on training and testing sets and generate confusion matrix**  
-scoresNconfusionMatrix <- testClist(combosNscores$combo, listOfTestingData, fraction_of_cases_in_sample)  
+`scoresNconfusionMatrix <- testClist(combosNscores$combo, listOfDataPartitions, fraction_of_cases_in_sample)`  
+
 **aggregate fold results  with scores and confusion matrix**  
-aggScores <- aggResults(scoresNconfusionMatrix)
+`aggScores <- aggResults(scoresNconfusionMatrix)`  
+
+*the "aggScores" dataframe is ranked by score so combos can be filtered by row index*  
+
+**make dataframe of genes/feataures**  
+`featureCount <- combo2fcount(names(aggScores))`  
+
+**TODO:**  
+establish and implement a score cutoff to filter the combos  
+wrap workflow into single function  
+???  
+
