@@ -1,29 +1,32 @@
 #  wrapper/interface functions for moses binary
 
-##### generate k-fold cross validation run
+##### generate 2-fold cross validation run
 #make k 2-fold partitions of moses input dfs, save training sets, and return list of testing dfs and df of column indices 
 # TODO:  add checks & warnings when writing over files
 makeMpartitions <- function(data, k = 10, control = 1, dir = "./", ...){
   require(caret)
   namestr <- deparse(substitute(data))
   flds <- createDataPartition(as.factor(data[, control]), times = k, ...)
-  out <- vector("list", k)
-  names(out) <- paste(namestr, "_f", 1:k, sep = "")
-  names(flds) <- names(out)
+  TrainOut <- vector("list", k)
+  TestOut <- vector("list", k)
+  names(TrainOut) <- paste(namestr, "_f", 1:k, sep = "")
+  names(TestOut) <- paste(namestr, "_f", 1:k, sep = "")
+  names(flds) <- names(TrainOut)
   for(i in 1:k){
-    write.csv(data[flds[[i]],], paste(dir, names(out)[i], ".csv", sep = ""), row.names = FALSE)
-    out[[i]] <- data[-flds[[i]],]
+  	TrainOut[[i]] <- data[flds[[i]],]
+    write.csv(TrainOut[[i]], paste(dir, names(TrainOut)[i], ".csv", sep = ""), row.names = FALSE)
+    TestOut[[i]] <- data[-flds[[i]],]
   }
-  out[["fold_index"]] <- as.data.frame(flds)
-  return(out)
+  TestOut[["fold_index"]] <- as.data.frame(flds)
+  return(list(train = TrainOut, test = TestOut))
 }
 
 # run moses on a file.  log file is named as input file name to first "." plus ".log".  output can be a file name.
-moses <- function( flags = "", DSVfile = "", output = TRUE) {
+moses <- function( flags = "", DSVfile = "", output = TRUE, ...) {
   if(flags == "help") flags <- "--help"          # moses(help) -> moses --help
   if(flags == "version")  flags <- "--version"    # moses() -> moses --version
   if(DSVfile != "") flags <- paste("--input-file", DSVfile, "--log-file", paste(word(DSVfile, sep = fixed(".")), ".log", sep = ""), flags)
-  system2("moses", args=flags, stdout = output)
+  system2("moses", args=flags, stdout = output, ...)
 }
 
 # run moses on all csv files in a directory.  "output" argument can be a file name.
@@ -36,61 +39,20 @@ runMfolder <- function(flags = "", dir = getwd(),  output = TRUE) {
   return(out)
 }
 
-### make df of features from combo strings ordered by feature count
-# set stripX = TRUE to remove first character from feature name.
-# default split = TRUE outputs 2 data frames in a list: $up & $down, with 2 columns:  feature (string), Freq (count)
-# $up are unmodified combo variables and $down are ! (not) combo variables
-# set split = FALSE to output single dataframe with column "level" = "up" or "down"
-combo2fcount <- function(combo, stripX = FALSE, split = FALSE) {
-  out <- vector("list", 2)
-  names(out) <- c("up", "down")
-  combo <- gsub("and|or|[()$]", "", combo)
-  combo <- unlist(strsplit(combo, split = " ", fixed = TRUE))
-  out$up <- grep("!", combo, value = TRUE, fixed = TRUE, invert = TRUE)
-  out$down <- substr(grep("!", combo, value = TRUE, fixed = TRUE), 2, 100)
-  if(stripX) out <- lapply(out, substr, 2, 100)
-  out <- lapply(out, function (feature) as.data.frame(table(feature), stringsAsFactors = FALSE))
-  if(split) return(lapply(out, function(x) x[order(x$Freq, decreasing = TRUE),]))
-  out$up$level <- "up"
-  out$down$level <- "down"
-  out <- rbind(out$up, out$down)[order(rbind(out$up, out$down)$Freq, decreasing = TRUE),]
-  out[order(out$feature, out$Freq),]
-}
-
-# calculate Escore: for down make count negative and sum by feature
-Escore <- function(c2fc, add = TRUE) {
-  if(!identical(names(c2fc)[1:3], c("feature", "Freq", "level"))) return("error: input is not output of combo2fcount(... split = FALSE)")
-  out <- data.frame(feature = c2fc$feature, Escore = ifelse(c2fc$level == "down", -c2fc$Freq, c2fc$Freq), stringsAsFactors = FALSE)
-  if(add) out <- aggregate(. ~ feature, data = out, function(x) sum(abs(x))) else
-    out <- aggregate(. ~ feature, data = out, sum)
-  if(length(c2fc) > 3) {
-    out <- merge(out, c2fc[, c(1, 4:length(c2fc))], by = "feature")
-                        names(out) <- c("feature", "Escore", names(c2fc)[4:length(c2fc)])
-  }
-unique(out[order(-abs(out$Escore), out$feature),])
-}
-
-# save combined combo2fcount result to csv file with option to return value (ret = TRUE) and save with deleted hi-lo features 
-combo2Fcsv <- function(combo, name = deparse(substitute(combo)), dir = ".", strip = FALSE, ret = FALSE, Escore = FALSE) {
-  name <- paste(name, "csv", sep = ".")
-  out <- combo2fcount(combo, stripX = strip, split = FALSE)
-  if(Escore) out <- Escore(out)
-  write.csv(out, file = paste(dir, name, sep = "/"), row.names = FALSE)
-  if(ret) return(out)
-}
-
 # make combo strings and feature dfs from moses output.  score = TRUE returns moses scoring data in brackets
 # this won't work if moses is called with -S [ --output-score ] = 0
 mscore2vector <- function(str) eval(parse(text = paste0("c(", gsub("\\[| |.$", "", str), ")")))
 
-#convert list of vectors of moses output strings to list(combo = vector of combo strings, score = list of combo score component matrices)
+# convert list of vectors of moses output strings to list(combo = vector of combo strings, score = list of combo score component matrices)
 moses2combo <- function(mout) {
   require(stringr)
-  if(length(grep("\\[", mout[[1]][1])) == 0) {
+	# check if coplexity score is included in output string
+	if(length(grep("\\[", mout[[1]][1])) == 0) {
   	mout <- lapply(mout, function(x) str_split_fixed(x, fixed(" "), 2))
   	out <- list(combo = lapply(mout, function(x) str_trim(x[, 2])), score = lapply(mout, function(x) x[, 1]))
   	return(out)
   }
+  # generate complexity score matrix
   mout <- lapply(mout, function(x) str_split_fixed(x, fixed("["), 2))
   score <- lapply(mout, function(x) sapply(x[, 2], mscore2vector, USE.NAMES = FALSE))
   mout <- lapply(mout, function(x) x[, 1])
@@ -100,20 +62,56 @@ moses2combo <- function(mout) {
   return(list(combo = mout, score = score))
 }
 
+# ## combine folds keeping worst score for duplicate combos
+# # extract duplicates
+# duplicateCombos <- function(clist) {
+# 	clist <- unlist(clist)
+# 	unique(clist[duplicated(clist)])
+# }
+# 
+# getIndex <- function(combo, clist) {
+# 	which(Reduce(rbind, clist) == combo, arr.ind = TRUE)
+# }
+# 
+# getScore <- function(Imatrix, sList, sIndex = 1) {
+# 	score <- apply(Imatrix, 1, function(x) sList[[x[1]]][sIndex, x[2]])
+# 	cbind(Imatrix, score = score)
+# }
+# 
+# deleteIndex <- function(m2cout) {
+# 	
+# }
+
 # make combo strings and feature dfs using moses2combo and combo2fcount
+combo2fcount <- function(combo, stripX = FALSE, split = FALSE) {
+	out <- vector("list", 2)
+	names(out) <- c("up", "down")
+	combo <- gsub("and|or|[`()$]", "", unlist(combo))
+	combo <- unlist(strsplit(combo, split = " ", fixed = TRUE))
+	out$up <- grep("!", combo, value = TRUE, fixed = TRUE, invert = TRUE)
+	out$down <- substr(grep("!", combo, value = TRUE, fixed = TRUE), 2, 100)
+	if(stripX) out <- lapply(out, substr, 2, 100)
+	out <- lapply(out, function (feature) as.data.frame(table(feature), stringsAsFactors = FALSE))
+	if(split) return(lapply(out, function(x) x[order(x$Freq, decreasing = TRUE),]))
+	out$up$level <- "up"
+	out$down$level <- "down"
+	out <- rbind(out$up, out$down)[order(rbind(out$up, out$down)$Freq, decreasing = TRUE),]
+	out[order(out$Freq, out$feature, decreasing = TRUE),]
+}
+
 parseMout <- function(mout, strip = FALSE) {
   require(stringr)
   m2c <- moses2combo(mout)
-  out <- vector("list", 3)
-  names(out) <- c("combo", "features", "score")
-  out[[1]] <- m2c[["combo"]]
+  out <- vector("list", 2)
+  names(out) <- c("combos", "features")
+  out[[1]] <- data.frame(combo = unlist(m2c[["combo"]]), score = as.numeric(unlist(lapply(m2c[["score"]], function(x) x[1,]))), stringsAsFactors = FALSE)
+  rownames(out[[1]]) <- NULL
   out[[2]] <- combo2fcount(out[[1]], stripX = strip, split = FALSE)
-  out[[3]] <- m2c[["score"]]
   return(out)
 }
 
-##### evaluate combo string vectors
-# The formulas used here are:
+##### evaluate combo string vectors on testing sets and generate scores & confusion matrices
+# The formulas used for the confusion matrix are:
 # 
 # Sensitivity = A/(A+C)
 # 
@@ -137,6 +135,7 @@ or <- function(x) Reduce("|", x)
 
 # turn boolean combo string vector into list of R function combinations
 combo.edit <- function(str) {
+	require(stringr)
   mc_ops <- list(c("true", "TRUE"), c("(", "(list("), c(")", "))"), c(" ", ", "),c("$", ""))
   for(i in seq_along(mc_ops)) str <- str_trim(str_replace_all(str, fixed(mc_ops[[i]][1]), mc_ops[[i]][2]))
   return(str)
@@ -168,7 +167,6 @@ testCstring <- function(combos, testdf, casecol = 1, caserat) {
   for(i in 1:m){
     results[i,] <- as.numeric(evalstring(combo.edit(combos[i])))
     fresult <- as.factor(results[i,])
-#     levels(fresult) <- c("0", "1")
     metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = caserat)
   }
   detach(testdf)
@@ -179,10 +177,15 @@ testCstring <- function(combos, testdf, casecol = 1, caserat) {
 }
 
 # evaluate list of combo strings & compute catagorization metrics.  "cc_ratio" is cases/1's over cases + controls/0's
-testClist <- function(clist, tdatlist, cc_ratio = .5) {
- tdatlist[["fold_index"]] <- NULL
- out <- Map(testCstring, clist[order(names(clist))], tdatlist[order(names(tdatlist))], caserat = cc_ratio)
- }
+testClist <- function(clist, tdatlist) {
+	case <- tdatlist$test[[1]]$case
+	cc_ratio <- sum(case) / length(case)
+	clist <- clist[order(names(clist))]
+	tdatlist$test[["fold_index"]] <- NULL
+	trainOut <- Map(testCstring, clist, tdatlist$train[order(names(tdatlist))], caserat = cc_ratio)
+	testOut <- Map(testCstring, clist, tdatlist$test[order(names(tdatlist))], caserat = cc_ratio)
+	return(list(train = trainOut, test = testOut))
+}
 
 ### combine runs & extract best models
 # extract, combine & recast results matrices from testClist()
@@ -202,8 +205,11 @@ col2name <- function(df, col = 1) {
 }
 
 getResults <- function(testOut) {
-	out <- lapply(testOut, function(x) x[[1]])
-	out <- lapply(out, name2col)
+	TrainOut <- lapply(testOut$train, function(x) x[[1]])
+	TrainOut <- lapply(TrainOut, name2col)
+	TestOut <- lapply(testOut$test, function(x) x[[1]])
+	TestOut <- lapply(TestOut, name2col)
+	out <- c(train = TrainOut, test = TestOut)
 	return(out)
 }
 
@@ -235,7 +241,7 @@ aggScore <- function(aggOut) {
 }
 
 aggResults <- function(testOut) {
-	out <- reshape2::melt(getResults(testOut), "name", variable.name = "sample", value.name = "mutant")
+	out <- reshape2::melt(getResults(testOut), "name", variable.name = "sample", value.name = "case")
 	out <- unique(out[-4])
 	out <- reshape2::dcast(out, name ~ sample)
 	out <- col2name(out)
@@ -289,6 +295,34 @@ med.normalize <- function(mat) {
     out[,i] <- as.numeric(vect >= med)
   }
   return(out)
+}
+
+### make df of features from combo strings ordered by feature count
+# set stripX = TRUE to remove first character from feature name.
+# default split = TRUE outputs 2 data frames in a list: $up & $down, with 2 columns:  feature (string), Freq (count)
+# $up are unmodified combo variables and $down are ! (not) combo variables
+# set split = FALSE to output single dataframe with column "level" = "up" or "down"
+
+# calculate Escore: for down make count negative and sum by feature
+Escore <- function(c2fc, add = TRUE) {
+	if(!identical(names(c2fc)[1:3], c("feature", "Freq", "level"))) return("error: input is not output of combo2fcount(... split = FALSE)")
+	out <- data.frame(feature = c2fc$feature, Escore = ifelse(c2fc$level == "down", -c2fc$Freq, c2fc$Freq), stringsAsFactors = FALSE)
+	if(add) out <- aggregate(. ~ feature, data = out, function(x) sum(abs(x))) else
+		out <- aggregate(. ~ feature, data = out, sum)
+	if(length(c2fc) > 3) {
+		out <- merge(out, c2fc[, c(1, 4:length(c2fc))], by = "feature")
+		names(out) <- c("feature", "Escore", names(c2fc)[4:length(c2fc)])
+	}
+	unique(out[order(-abs(out$Escore), out$feature),])
+}
+
+# save combined combo2fcount result to csv file with option to return value (ret = TRUE) and save with deleted hi-lo features 
+combo2Fcsv <- function(combo, name = deparse(substitute(combo)), dir = ".", strip = FALSE, ret = FALSE, Escore = FALSE) {
+	name <- paste(name, "csv", sep = ".")
+	out <- combo2fcount(combo, stripX = strip, split = FALSE)
+	if(Escore) out <- Escore(out)
+	write.csv(out, file = paste(dir, name, sep = "/"), row.names = FALSE)
+	if(ret) return(out)
 }
 
 # ### extract moses output from log files
