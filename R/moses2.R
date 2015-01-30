@@ -52,9 +52,10 @@ moses2combo <- function(mout) {
   	out <- list(combo = lapply(mout, function(x) str_trim(x[, 2])), score = lapply(mout, function(x) x[, 1]))
   	return(out)
   }
+  
   # generate complexity score matrix
   mout <- lapply(mout, function(x) str_split_fixed(x, fixed("["), 2))
-  score <- lapply(mout, function(x) sapply(x[, 2], mscore2vector, USE.NAMES = FALSE))
+  score <- lapply(mout, function(x) vapply(x[, 2], mscore2vector, vector("numeric", 5), USE.NAMES = FALSE))
   mout <- lapply(mout, function(x) x[, 1])
   mout <- lapply(mout, function(x) str_split_fixed(x, fixed(" "), 2))
   mout <- lapply(mout, function(x) str_trim(x[, 2]))
@@ -139,23 +140,32 @@ cml2df <- function(cmlist) {
 }
 
 # evaluate combos from output of  moses2combo() on test dfs and return result lists using caret::confusionMatrix
-testCstring <- function(combos, testdf, casecol = 1, caserat) {
-  case <- testdf[[casecol]]
-  n <- length(case)
-  attach(testdf)
-  m <- length(combos)
-  results <- matrix(nrow = m,ncol = n, dimnames = list(sapply(combos, as.name), row.names(testdf)))
-  metrics <- vector("list", m)
-  for(i in 1:m){
-    results[i,] <- as.numeric(evalstring(combo.edit(combos[i])))
-    fresult <- as.factor(results[i,])
-    metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = caserat)
-  }
-  detach(testdf)
-  metrics <- cml2df(metrics)
-  rownames(metrics) <- rownames(results)
-  results <- as.data.frame(rbind(results, case))
-  return(list(result = results, score = metrics))
+testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) {
+	case <- testdf[[casecol]]
+	n <- length(case)
+	attach(testdf)
+	m <- length(combos)
+	results <- matrix(nrow = m,ncol = n, dimnames = list(sapply(combos, as.name), row.names(testdf)))
+	if(return.cm) {
+		metrics <- vector("list", m)
+		for(i in 1:m){
+			results[i,] <- as.numeric(evalstring(combo.edit(combos[i])))
+			fresult <- as.factor(results[i,])
+			levels(fresult) <- c(0, 1)
+			metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = caserat)
+		}
+		detach(testdf)
+		metrics <- cml2df(metrics)
+		rownames(metrics) <- rownames(results)
+		results <- as.data.frame(rbind(case, results))
+		return(list(result = results, score = metrics))
+	}
+	for(i in 1:m){
+		results[i,] <- as.numeric(evalstring(combo.edit(combos[i])))
+	}
+	detach(testdf)
+	results <- as.data.frame(rbind(case, results))
+	return(results)
 }
 
 # evaluate list of combo strings & compute catagorization metrics.  "cc_ratio" is cases/1's over cases + controls/0's
@@ -215,7 +225,7 @@ aggScore <- function(aggOut) {
 	metrics <- vector("list", n)
 	for(i in 1:n){
 		fresult <- as.factor(unlist(results[i,]))
-#     levels(fresult) <- c("0", "1")
+    levels(fresult) <- c(0, 1)
 		metrics[[i]] <- caret::confusionMatrix(fresult, case, prev = summary(case)[2] / summary(case)[1])
 	}
 	names(metrics) <- rownames(results)
@@ -231,44 +241,36 @@ aggResults <- function(testOut) {
 	return(list(results = out, confusionMatrix = aggScore(out)))
 }
 
-##### put training and validation together and generate summary results
-# extract the ith element from all list components
-getCombo <- function(rlist, c) {
-  out <- list(rlist$combo[c], rlist$Mscores[c], rlist$score[c,])
-  names(out) <- c("combo", "mosesScores", "score")
-  return(out)
+### ensemble validation
+getScores <- function(m2cOut, penalized = FALSE) {
+	out <- lapply(m2cOut$score, function(x) x[1 + penalized,])
+	return(out)
 }
 
-# get indexes of all of the n highest m (column index of confusion matrix data from "col") scoring combos from score df
-# TODO: add option to get all combos with m-score > cut-off
-bestIndex <- function(df, n = 1, col = 1) {
-  rindex <- order(df[[col]], decreasing = TRUE)
-  rvalues <- unique(df[[col]][rindex])
-  which(df[[col]] >= rvalues[n])
+getBestCombos <- function(slist) {
+	best <- lapply(slist, max)
+	out <- mapply(function(x, y) Filter(function(z) z == y, x), slist, best)
+	return(lapply(out, names))
 }
 
-# combine fold results (results df is thrown out)
-combineFolds <- function(rlist) {
-  out <- tail(rlist[[1]], -1)
-  for(i in seq(2, length(rlist))) {
-    out[[1]] <- rbind(out[[1]], rlist[[i]][[2]])
-    out[[2]] <- c(out[[2]], rlist[[i]][[3]])
-    out[[3]] <- c(out[[3]], rlist[[i]][[4]])
-  }
-  return(out)
-}
-# get all the n best m-scoring combo programs from a k-fold validation set. default m is balanced accuracy
-# TODO: add option to get all combos with m-score > cut-off
-bestCombos <- function(rlist, N = 1, metric = 13) {
-  allfolds <- combineFolds(rlist)
-  best <- bestIndex(allfolds$score, n = N, col = metric)
-  out <- getCombo(allfolds, best)
-  out[["features"]] <- combo2fcount(out$combo, split = FALSE)
-  return(out)
+ensemble.score <- function(resultMatrix) {
+	score <- apply(resultMatrix, 2, function(x) round(median(x))) 
+	return(score)
 }
 
-## apply median norm to matrix by columns
+testCElist <- function(celist, tdatlist) {
+	case <- tdatlist$test[[1]]$case
+	cc_ratio <- sum(case) / length(case)
+	celist <- celist[order(names(celist))]
+	tdatlist$test[["fold_index"]] <- NULL
+	resultOut <- Map(testCstring, celist, tdatlist$test[order(names(tdatlist))], caserat = cc_ratio, return.cm = FALSE)
+	score <- lapply(resultOut, function(x) ensemble.score(x[-1,]))
+	resultOut <- Map(rbind, score = score, resultOut)
+	# TODO make confusion matrix for ensemble list
+	return(resultOut)
+}
 
+### apply median norm to matrix by columns
 med.normalize <- function(mat) {
   out <- mat
   for (i in seq(dim(mat)[2])) { 
@@ -284,6 +286,42 @@ med.normalize <- function(mat) {
 # default split = TRUE outputs 2 data frames in a list: $up & $down, with 2 columns:  feature (string), Freq (count)
 # $up are unmodified combo variables and $down are ! (not) combo variables
 # set split = FALSE to output single dataframe with column "level" = "up" or "down"
+
+##### put training and validation together and generate summary results
+# extract the ith element from all list components
+getCombo <- function(rlist, c) {
+	out <- list(rlist$combo[c], rlist$Mscores[c], rlist$score[c,])
+	names(out) <- c("combo", "mosesScores", "score")
+	return(out)
+}
+
+# get indexes of all of the n highest m (column index of confusion matrix data from "col") scoring combos from score df
+# TODO: add option to get all combos with m-score > cut-off
+bestIndex <- function(df, n = 1, col = 1) {
+	rindex <- order(df[[col]], decreasing = TRUE)
+	rvalues <- unique(df[[col]][rindex])
+	which(df[[col]] >= rvalues[n])
+}
+
+# combine fold results (results df is thrown out)
+combineFolds <- function(rlist) {
+	out <- tail(rlist[[1]], -1)
+	for(i in seq(2, length(rlist))) {
+		out[[1]] <- rbind(out[[1]], rlist[[i]][[2]])
+		out[[2]] <- c(out[[2]], rlist[[i]][[3]])
+		out[[3]] <- c(out[[3]], rlist[[i]][[4]])
+	}
+	return(out)
+}
+# get all the n best m-scoring combo programs from a k-fold validation set. default m is balanced accuracy
+# TODO: add option to get all combos with m-score > cut-off
+bestCombos <- function(rlist, N = 1, metric = 13) {
+	allfolds <- combineFolds(rlist)
+	best <- bestIndex(allfolds$score, n = N, col = metric)
+	out <- getCombo(allfolds, best)
+	out[["features"]] <- combo2fcount(out$combo, split = FALSE)
+	return(out)
+}
 
 # calculate Escore: for down make count negative and sum by feature
 Escore <- function(c2fc, add = TRUE) {
