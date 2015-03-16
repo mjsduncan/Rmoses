@@ -10,10 +10,12 @@ homo_test <- makeMpartitions(homo_moses)
 homo_combos <- vector("list", 10)
 names(homo_combos) <- names(homo_test$train)
 homo_combos <- lapply(homo_combos, function(x) x <- Homo_combo$combo)
+
+library("stringr")
 homo_eval <- testClist(homo_combos, homo_test)
 
 # column names of training & test sets form column names of complete data set
-sapply(merge(as.data.frame(lapply(homo_test[[11]], as.character), stringsAsFactors = FALSE), as.data.frame(lapply(homo_eval, function(x) names(x[[1]])), stringsAsFactors = FALSE), homo = TRUE), function(x) length(unique(x)))
+sapply(merge(as.data.frame(lapply(homo_test$test[[11]], as.character), stringsAsFactors = FALSE), as.data.frame(lapply(homo_eval, function(x) names(x[[1]])), stringsAsFactors = FALSE), homo = TRUE), function(x) length(unique(x)))
 # homo_moses_f1  homo_moses_f2  homo_moses_f3  homo_moses_f4  homo_moses_f5  homo_moses_f6  homo_moses_f7  homo_moses_f8 
 # 67              67              67              67              67              67              67              67 
 # homo_moses_f9 homo_moses_f10 

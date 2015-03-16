@@ -3,9 +3,8 @@
 ##### generate 2-fold cross validation run
 #make k 2-fold partitions of moses input dfs, save training sets, and return list of testing dfs and df of column indices 
 # TODO:  add checks & warnings when writing over files
-makeMpartitions <- function(data, k = 10, control = 1, dir = "./", ...){
-  require(caret)
-  namestr <- deparse(substitute(data))
+makeMpartitions <- function(data, k = 10, control = 1, dir = "./", namestr = deparse(substitute(data)), ...){
+  require(caret)  
   flds <- createDataPartition(as.factor(data[, control]), times = k, ...)
   TrainOut <- vector("list", k)
   TestOut <- vector("list", k)
@@ -145,7 +144,7 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 	n <- length(case)
 	attach(testdf)
 	m <- length(combos)
-	results <- matrix(nrow = m,ncol = n, dimnames = list(sapply(combos, as.name), row.names(testdf)))
+	results <- matrix(nrow = m,ncol = n, dimnames = list(combos, row.names(testdf)))
 	if(return.cm) {
 		metrics <- vector("list", m)
 		for(i in 1:m){
@@ -169,13 +168,20 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 }
 
 # evaluate list of combo strings & compute catagorization metrics.  "cc_ratio" is cases/1's over cases + controls/0's
-testClist <- function(clist, tdatlist) {
-	case <- tdatlist$test[[1]]$case
+testClist <- function(clist, tdatlist, caseCol = 1) {
+
+	# check data list
+	for(i in 1:length(tdatlist)) if(!is.data.frame(tdatlist[[i]])) tdatlist[[i]] <- lapply(tdatlist, as.data.frame)
+
+	# compute case to control ratio
+	case <- tdatlist$test[[1]][[caseCol]]
 	cc_ratio <- sum(case) / length(case)
+	if(is.nan(cc_ratio) | cc_ratio == 0) stop("malformed case column")
+
 	clist <- clist[order(names(clist))]
 	tdatlist$test[["fold_index"]] <- NULL
-	trainOut <- Map(testCstring, clist, tdatlist$train[order(names(tdatlist))], caserat = cc_ratio)
-	testOut <- Map(testCstring, clist, tdatlist$test[order(names(tdatlist))], caserat = cc_ratio)
+	trainOut <- Map(testCstring, clist, tdatlist$train[order(names(tdatlist$train))], caserat = cc_ratio, casecol = caseCol)
+	testOut <- Map(testCstring, clist, tdatlist$test[order(names(tdatlist$test))], caserat = cc_ratio, casecol = caseCol)
 	return(list(train = trainOut, test = testOut))
 }
 
@@ -266,8 +272,16 @@ testCElist <- function(celist, tdatlist) {
 	resultOut <- Map(testCstring, celist, tdatlist$test[order(names(tdatlist))], caserat = cc_ratio, return.cm = FALSE)
 	score <- lapply(resultOut, function(x) ensemble.score(x[-1,]))
 	resultOut <- Map(rbind, score = score, resultOut)
-	# TODO make confusion matrix for ensemble list
-	return(resultOut)
+	m <- length(resultOut)
+	metrics <- vector("list", m)
+	for(i in 1:m){
+		fresult <- as.factor(unlist(resultOut[[i]]["score",]))
+		levels(fresult) <- c(0, 1)
+		metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = cc_ratio)
+	}
+	metrics <- cml2df(metrics)
+	rownames(metrics) <- names(resultOut)
+	return(list(results = resultOut, confusionMatrix = metrics))
 }
 
 ### apply median norm to matrix by columns
@@ -281,48 +295,93 @@ med.normalize <- function(mat) {
   return(out)
 }
 
-### make df of features from combo strings ordered by feature count
-# set stripX = TRUE to remove first character from feature name.
-# default split = TRUE outputs 2 data frames in a list: $up & $down, with 2 columns:  feature (string), Freq (count)
-# $up are unmodified combo variables and $down are ! (not) combo variables
-# set split = FALSE to output single dataframe with column "level" = "up" or "down"
-
-##### put training and validation together and generate summary results
-# extract the ith element from all list components
-getCombo <- function(rlist, c) {
-	out <- list(rlist$combo[c], rlist$Mscores[c], rlist$score[c,])
-	names(out) <- c("combo", "mosesScores", "score")
-	return(out)
+### wrap it up
+# get list of input files and set up directories
+make.dir <- function(subDir, mainDir = getwd()) {
+	if (file.exists(paste(mainDir, subDir, "/", sep = "/", collapse = "/"))) {
+		cat(paste(subDir, "exists in mainDir and is a directory\n"))
+	} else if (file.exists(paste(mainDir, subDir, sep = "/", collapse = "/"))) {
+		cat(paste(subDir, "exists in", mainDir, "but is a file\n"))
+	} else {
+		cat(paste(subDir, "does not exist in", mainDir, "- creating\n"))
+		dir.create(file.path(mainDir, subDir))
+	}  
+	if (file.exists(paste(mainDir, subDir, "/", sep = "/", collapse = "/"))) {
+		# By this point, the directory either existed or has been successfully created
+		setwd(file.path(mainDir, subDir))
+	} else {
+		cat(paste(subDir, "does not exist\n"))
+		# Handle this error as appropriate
+	}
 }
 
-# get indexes of all of the n highest m (column index of confusion matrix data from "col") scoring combos from score df
-# TODO: add option to get all combos with m-score > cut-off
-bestIndex <- function(df, n = 1, col = 1) {
-	rindex <- order(df[[col]], decreasing = TRUE)
-	rvalues <- unique(df[[col]][rindex])
-	which(df[[col]] >= rvalues[n])
+setup <- function(inputDr, ...) {   # , outputDr = NULL, drName = "Rmoses.output"
+	inputEnv <- new.env(parent = globalenv())
+	input <- list.files(inputDr, pattern = ".csv")
+	for(file in input) assign(unlist(strsplit(file, ".", fixed = TRUE))[1], read.csv(file.path(inputDr, file)), envir = inputEnv)
+	input <- ls(envir = inputEnv)
+# 	if(outputDr != getwd()) make.dir(file.path(outputDr, drName))
+	dataList <- vector("list", length(input))
+	names(dataList) <- input
+	for(minput in input) {
+		make.dir(minput)
+		data <- makeMpartitions(get(minput, envir = inputEnv), k = 10, control = 1, dir = "./", namestr = minput, ...)
+		dataList[[minput]] <- data
+		saveName <- paste0(minput, "_partition")
+		assign(saveName, data)
+		save(list = saveName, file = paste0(saveName, ".RData"))
+		setwd("..")
+	}
+return(dataList)
 }
 
-# combine fold results (results df is thrown out)
-combineFolds <- function(rlist) {
-	out <- tail(rlist[[1]], -1)
-	for(i in seq(2, length(rlist))) {
-		out[[1]] <- rbind(out[[1]], rlist[[i]][[2]])
-		out[[2]] <- c(out[[2]], rlist[[i]][[3]])
-		out[[3]] <- c(out[[3]], rlist[[i]][[4]])
+# run moses & save results
+runMoses <- function(flags, testdat, ensemble = FALSE, inputDr = getwd()) {
+	setwd(inputDr)
+	runs <- dir()
+	out <- vector("list", length(runs))
+	for(n in runs) {
+		setwd(n)
+		cat(paste("running moses on .csv files in", n))
+		combos <- moses2combo(runMfolder(flags))
+		saveName <- paste0(n, "_out")
+		assign(saveName, combos)
+		save(saveName, file = paste0(saveName, ".RData"))
+		setwd("..")
+		out[[n]] <- if(ensemble) {testCElist(getBestCombos(getScores(combos)), testdat[[n]])
+		} else aggResults(testClist(combos$combo, testdat[[n]]))
 	}
 	return(out)
 }
-# get all the n best m-scoring combo programs from a k-fold validation set. default m is balanced accuracy
-# TODO: add option to get all combos with m-score > cut-off
-bestCombos <- function(rlist, N = 1, metric = 13) {
-	allfolds <- combineFolds(rlist)
-	best <- bestIndex(allfolds$score, n = N, col = metric)
-	out <- getCombo(allfolds, best)
-	out[["features"]] <- combo2fcount(out$combo, split = FALSE)
-	return(out)
-}
+# output 
 
+#for(i in 1:10) {
+#	make.dir(mainD, paste("meta_run", i, sep = ""))
+#	
+#	# # impute NAs and check for non-informative features
+#	# moses.data$gpl81 <- bin.impute.matrix(gpl81)
+#	# summary(colSums(moses.data$gpl81))
+#	# #    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#	# #   16.00   18.00   18.00   18.07   18.00   22.00 
+#	# dim(moses.data$gpl81)
+#	# # [1]    34 12489
+#	
+#	### dataset pgl81
+#	
+#	# gpl81 <- data.frame(moses.data$gpl81, check.names = TRUE)
+#	dataset <- "gpl81"
+#	cr <- mean(gpl81[, "age"])
+#	make.dir(getwd(), dataset)
+#	gpl81_1.test <- makeMpartitions(gpl81, p = .5)
+#	gpl81_1_hx5.train <- runMfolder(moses.flags)
+#	save(gpl81_1.test, gpl81_1_hx5.train, file = paste("../", dataset, "_run", i, "_moses.Rdata", sep = ""))
+#	gpl81_1_hx5 <- testClist(gpl81_1_hx5.train, gpl81_1.test, cr)
+#	gpl81_1_hx5.best <- bestCombos(gpl81_1_hx5)
+#	gpl81_1_hx5.bestN5 <- bestCombos(gpl81_1_hx5, N = 5)
+#	save(gpl81_1_hx5.best, gpl81_1_hx5.bestN5, file = paste("gpl81_", i, "_best.rdata", sep = ""))
+#	setwd("..")
+#}	
+	
 # calculate Escore: for down make count negative and sum by feature
 Escore <- function(c2fc, add = TRUE) {
 	if(!identical(names(c2fc)[1:3], c("feature", "Freq", "level"))) return("error: input is not output of combo2fcount(... split = FALSE)")
@@ -363,3 +422,4 @@ combo2Fcsv <- function(combo, name = deparse(substitute(combo)), dir = ".", stri
 # 	}
 # 	return(out)
 # }
+
