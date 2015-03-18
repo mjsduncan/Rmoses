@@ -111,7 +111,7 @@ parseMout <- function(mout, strip = FALSE) {
 # 
 # Balanced Accuracy = (Sensitivity+Specificity)/2
 
-# translate n >=2 argument boolean operators
+# define n >=2 argument boolean operators
 and <- function(x) Reduce("&", x)
 or <- function(x) Reduce("|", x)
 
@@ -138,11 +138,13 @@ cml2df <- function(cmlist) {
   return(as.data.frame(out))
 }
 
-# evaluate combos from output of  moses2combo() on test dfs and return result lists using caret::confusionMatrix
+# evaluate combos from output of  moses2combo() on their corresponding test df and return result lists using caret::confusionMatrix
+# return.cm is flag for return of confusion matrix output
 testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) {
+	if(class(testdf) != "data.frame") testdf <- as.data.frame(testdf)
 	case <- testdf[[casecol]]
 	n <- length(case)
-	attach(testdf)
+	attach(testdf, warn = FALSE)
 	m <- length(combos)
 	results <- matrix(nrow = m,ncol = n, dimnames = list(combos, row.names(testdf)))
 	if(return.cm) {
@@ -159,6 +161,8 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 		results <- as.data.frame(rbind(case, results))
 		return(list(result = results, score = metrics))
 	}
+
+	# if not returning confusion matrix do 
 	for(i in 1:m){
 		results[i,] <- as.numeric(evalstring(combo.edit(combos[i])))
 	}
@@ -168,13 +172,11 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 }
 
 # evaluate list of combo strings & compute catagorization metrics.  "cc_ratio" is cases/1's over cases + controls/0's
+# returns list of listed pairs of score & confusion matrices merged together seperately for training sets and test sets
 testClist <- function(clist, tdatlist, caseCol = 1) {
 
-	# check data list
-	for(i in 1:length(tdatlist)) if(!is.data.frame(tdatlist[[i]])) tdatlist[[i]] <- lapply(tdatlist, as.data.frame)
-
 	# compute case to control ratio
-	case <- tdatlist$test[[1]][[caseCol]]
+	case <- tdatlist$test[[1]][, caseCol]
 	cc_ratio <- sum(case) / length(case)
 	if(is.nan(cc_ratio) | cc_ratio == 0) stop("malformed case column")
 
