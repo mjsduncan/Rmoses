@@ -129,6 +129,7 @@ evalstring <- function(str){
 }
 
 # put confusionMatrix outputs in table
+
 cmv <- function(cm) {
   c('[['(cm, 3)[c(1, 3:6)], '[['(cm, 4))
 }
@@ -172,18 +173,18 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 }
 
 # evaluate list of combo strings & compute catagorization metrics.  "cc_ratio" is cases/1's over cases + controls/0's
-# returns list of listed pairs of score & confusion matrices merged together seperately for training sets and test sets
+# returns list of lists of pairs of score & confusion matrices for training sets and test sets
 testClist <- function(clist, tdatlist, caseCol = 1) {
 
-	# compute case to control ratio
+	# compute case prevalence
 	case <- tdatlist$test[[1]][, caseCol]
-	cc_ratio <- sum(case) / length(case)
-	if(is.nan(cc_ratio) | cc_ratio == 0) stop("malformed case column")
+	caseprev <- sum(case) / length(case)
+	if(is.nan(caseprev) | caseprev == 0) stop("malformed case column")
 
 	clist <- clist[order(names(clist))]
 	tdatlist$test[["fold_index"]] <- NULL
-	trainOut <- Map(testCstring, clist, tdatlist$train[order(names(tdatlist$train))], caserat = cc_ratio, casecol = caseCol)
-	testOut <- Map(testCstring, clist, tdatlist$test[order(names(tdatlist$test))], caserat = cc_ratio, casecol = caseCol)
+	trainOut <- Map(testCstring, clist, tdatlist$train[order(names(tdatlist$train))], caserat = caseprev, casecol = caseCol)
+	testOut <- Map(testCstring, clist, tdatlist$test[order(names(tdatlist$test))], caserat = caseprev, casecol = caseCol)
 	return(list(train = trainOut, test = testOut))
 }
 
@@ -204,6 +205,7 @@ col2name <- function(df, col = 1) {
 	return(df)
 }
 
+# get the combo results on training & testing sets for each cross validation fold
 getResults <- function(testOut) {
 	TrainOut <- lapply(testOut$train, function(x) x[[1]])
 	TrainOut <- lapply(TrainOut, name2col)
@@ -213,28 +215,32 @@ getResults <- function(testOut) {
 	return(out)
 }
 
+# sort results by increasing distance combo score vector from case vector of samples
 sortResults <- function(aggOut) {
 	out <- aggOut[c(grep("^case$", row.names(aggOut)), grep("^case$", row.names(aggOut), invert = TRUE)), gtools::mixedorder(names(aggOut))]
  	out <- cbind(out, score = apply(as.matrix(out), 1, function(x) vdist(out[1,], x)))
 	return(out[order(out$score, rowSums(is.na(out))),])
 }
 
+# vector distance defined as sum of number of differences/false results.  equals negative of moses binary raw score.
 vdist <- function(x, y) {
 	if(length(x) != length(y)) return("vectors have different lengths")
 	sum(x != y, na.rm = TRUE)
 }
 
 aggScore <- function(aggOut) {
+
+	# drop "score" column from kth cross-validation run
 	results <- aggOut[, -dim(aggOut)[2]]
 	case <- as.factor(unlist(results[1,]))
-	print(summary(case))
+	print(summary(case)[2] / length(case))
 	results <- results[-1,]
 	n <- dim(results)[1]
 	metrics <- vector("list", n)
 	for(i in 1:n){
 		fresult <- as.factor(unlist(results[i,]))
     levels(fresult) <- c(0, 1)
-		metrics[[i]] <- caret::confusionMatrix(fresult, case, prev = summary(case)[2] / summary(case)[1])
+		metrics[[i]] <- caret::confusionMatrix(fresult, case, prev = summary(case)[2] / length(case))
 	}
 	names(metrics) <- rownames(results)
 	return(cml2df(metrics))	
