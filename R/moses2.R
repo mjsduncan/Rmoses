@@ -1,10 +1,10 @@
-#  wrapper/interface functions for moses binary
+###  wrapper/interface functions for moses binary
 
-##### generate 2-fold cross validation run
-#make k 2-fold partitions of moses input dfs, save training sets, and return list of testing dfs and df of column indices 
+## generate 2-fold cross validation run
+#make k 2-fold partitions of moses input dfs, save training sets, and return list of testing dfs and df of column indices
 # TODO:  add checks & warnings when writing over files
 makeMpartitions <- function(data, k = 10, control = 1, dir = "./", namestr = deparse(substitute(data)), ...){
-  require(caret)  
+  require(caret)
   flds <- createDataPartition(as.factor(data[, control]), times = k, ...)
   TrainOut <- vector("list", k)
   TestOut <- vector("list", k)
@@ -51,7 +51,7 @@ moses2combo <- function(mout) {
   	out <- list(combo = lapply(mout, function(x) str_trim(x[, 2])), score = lapply(mout, function(x) x[, 1]))
   	return(out)
   }
-  
+
   # generate complexity score matrix
   mout <- lapply(mout, function(x) str_split_fixed(x, fixed("["), 2))
   score <- lapply(mout, function(x) vapply(x[, 2], mscore2vector, vector("numeric", 5), USE.NAMES = FALSE))
@@ -94,21 +94,21 @@ parseMout <- function(mout, strip = FALSE) {
 
 ##### evaluate combo string vectors on testing sets and generate scores & confusion matrices
 # The formulas used for the confusion matrix are:
-# 
+#
 # Sensitivity = A/(A+C)
-# 
+#
 # Specificity = D/(B+D)
-# 
+#
 # Prevalence = (A+C)/(A+B+C+D)
-# 
+#
 # PPV = (sensitivity * Prevalence)/((sensitivity*Prevalence) + ((1-specificity)*(1-Prevalence)))
-# 
+#
 # NPV = (specificity * (1-Prevalence))/(((1-sensitivity)*Prevalence) + ((specificity)*(1-Prevalence)))
-# 
+#
 # Detection Rate = A/(A+B+C+D)
-# 
+#
 # Detection Prevalence = (A+B)/(A+B+C+D)
-# 
+#
 # Balanced Accuracy = (Sensitivity+Specificity)/2
 
 # define n >=2 argument boolean operators
@@ -129,6 +129,7 @@ evalstring <- function(str){
 }
 
 # put confusionMatrix outputs in table
+
 cmv <- function(cm) {
   c('[['(cm, 3)[c(1, 3:6)], '[['(cm, 4))
 }
@@ -162,7 +163,7 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 		return(list(result = results, score = metrics))
 	}
 
-	# if not returning confusion matrix do 
+	# if not returning confusion matrix do
 	for(i in 1:m){
 		results[i,] <- as.numeric(evalstring(combo.edit(combos[i])))
 	}
@@ -172,18 +173,18 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 }
 
 # evaluate list of combo strings & compute catagorization metrics.  "cc_ratio" is cases/1's over cases + controls/0's
-# returns list of listed pairs of score & confusion matrices merged together seperately for training sets and test sets
+# returns list of lists of pairs of score & confusion matrices for training sets and test sets
 testClist <- function(clist, tdatlist, caseCol = 1) {
 
-	# compute case to control ratio
+	# compute case prevalence
 	case <- tdatlist$test[[1]][, caseCol]
-	cc_ratio <- sum(case) / length(case)
-	if(is.nan(cc_ratio) | cc_ratio == 0) stop("malformed case column")
+	caseprev <- sum(case) / length(case)
+	if(is.nan(caseprev) | caseprev == 0) stop("malformed case column")
 
 	clist <- clist[order(names(clist))]
 	tdatlist$test[["fold_index"]] <- NULL
-	trainOut <- Map(testCstring, clist, tdatlist$train[order(names(tdatlist$train))], caserat = cc_ratio, casecol = caseCol)
-	testOut <- Map(testCstring, clist, tdatlist$test[order(names(tdatlist$test))], caserat = cc_ratio, casecol = caseCol)
+	trainOut <- Map(testCstring, clist, tdatlist$train[order(names(tdatlist$train))], caserat = caseprev, casecol = caseCol)
+	testOut <- Map(testCstring, clist, tdatlist$test[order(names(tdatlist$test))], caserat = caseprev, casecol = caseCol)
 	return(list(train = trainOut, test = testOut))
 }
 
@@ -204,6 +205,7 @@ col2name <- function(df, col = 1) {
 	return(df)
 }
 
+# get the combo results on training & testing sets for each cross validation fold
 getResults <- function(testOut) {
 	TrainOut <- lapply(testOut$train, function(x) x[[1]])
 	TrainOut <- lapply(TrainOut, name2col)
@@ -213,31 +215,35 @@ getResults <- function(testOut) {
 	return(out)
 }
 
+# sort results by increasing distance combo score vector from case vector of samples
 sortResults <- function(aggOut) {
 	out <- aggOut[c(grep("^case$", row.names(aggOut)), grep("^case$", row.names(aggOut), invert = TRUE)), gtools::mixedorder(names(aggOut))]
  	out <- cbind(out, score = apply(as.matrix(out), 1, function(x) vdist(out[1,], x)))
 	return(out[order(out$score, rowSums(is.na(out))),])
 }
 
+# vector distance defined as sum of number of differences/false results.  equals negative of moses binary raw score.
 vdist <- function(x, y) {
 	if(length(x) != length(y)) return("vectors have different lengths")
 	sum(x != y, na.rm = TRUE)
 }
 
 aggScore <- function(aggOut) {
+
+	# drop "score" column from kth cross-validation run
 	results <- aggOut[, -dim(aggOut)[2]]
 	case <- as.factor(unlist(results[1,]))
-	print(summary(case))
+	print(summary(case)[2] / length(case))
 	results <- results[-1,]
 	n <- dim(results)[1]
 	metrics <- vector("list", n)
 	for(i in 1:n){
 		fresult <- as.factor(unlist(results[i,]))
     levels(fresult) <- c(0, 1)
-		metrics[[i]] <- caret::confusionMatrix(fresult, case, prev = summary(case)[2] / summary(case)[1])
+		metrics[[i]] <- caret::confusionMatrix(fresult, case, prev = summary(case)[2] / length(case))
 	}
 	names(metrics) <- rownames(results)
-	return(cml2df(metrics))	
+	return(cml2df(metrics))
 }
 
 aggResults <- function(testOut) {
@@ -262,16 +268,16 @@ getBestCombos <- function(slist) {
 }
 
 ensemble.score <- function(resultMatrix) {
-	score <- apply(resultMatrix, 2, function(x) round(median(x))) 
+	score <- apply(resultMatrix, 2, function(x) round(median(x)))
 	return(score)
 }
 
 testCElist <- function(celist, tdatlist) {
 	case <- tdatlist$test[[1]]$case
-	cc_ratio <- sum(case) / length(case)
+	caseprev <- sum(case) / length(case)
 	celist <- celist[order(names(celist))]
 	tdatlist$test[["fold_index"]] <- NULL
-	resultOut <- Map(testCstring, celist, tdatlist$test[order(names(tdatlist))], caserat = cc_ratio, return.cm = FALSE)
+	resultOut <- Map(testCstring, celist, tdatlist$test[order(names(tdatlist))], caserat = caseprev, return.cm = FALSE)
 	score <- lapply(resultOut, function(x) ensemble.score(x[-1,]))
 	resultOut <- Map(rbind, score = score, resultOut)
 	m <- length(resultOut)
@@ -279,7 +285,7 @@ testCElist <- function(celist, tdatlist) {
 	for(i in 1:m){
 		fresult <- as.factor(unlist(resultOut[[i]]["score",]))
 		levels(fresult) <- c(0, 1)
-		metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = cc_ratio)
+		metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = caseprev)
 	}
 	metrics <- cml2df(metrics)
 	rownames(metrics) <- names(resultOut)
@@ -289,13 +295,16 @@ testCElist <- function(celist, tdatlist) {
 ### apply median norm to matrix by columns
 med.normalize <- function(mat) {
   out <- mat
-  for (i in seq(dim(mat)[2])) { 
+  for (i in seq(dim(mat)[2])) {
     vect <- mat[,i]
     med <- median(vect, na.rm = TRUE)
     out[,i] <- as.numeric(vect >= med)
   }
   return(out)
 }
+
+# unfinished and scrap code
+#--------------------------
 
 ### wrap it up
 # get list of input files and set up directories
@@ -307,7 +316,7 @@ make.dir <- function(subDir, mainDir = getwd()) {
 	} else {
 		cat(paste(subDir, "does not exist in", mainDir, "- creating\n"))
 		dir.create(file.path(mainDir, subDir))
-	}  
+	}
 	if (file.exists(paste(mainDir, subDir, "/", sep = "/", collapse = "/"))) {
 		# By this point, the directory either existed or has been successfully created
 		setwd(file.path(mainDir, subDir))
@@ -355,21 +364,21 @@ runMoses <- function(flags, testdat, ensemble = FALSE, inputDr = getwd()) {
 	}
 	return(out)
 }
-# output 
+# output
 
 #for(i in 1:10) {
 #	make.dir(mainD, paste("meta_run", i, sep = ""))
-#	
+#
 #	# # impute NAs and check for non-informative features
 #	# moses.data$gpl81 <- bin.impute.matrix(gpl81)
 #	# summary(colSums(moses.data$gpl81))
-#	# #    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
-#	# #   16.00   18.00   18.00   18.07   18.00   22.00 
+#	# #    Min. 1st Qu.  Median    Mean 3rd Qu.    Max.
+#	# #   16.00   18.00   18.00   18.07   18.00   22.00
 #	# dim(moses.data$gpl81)
 #	# # [1]    34 12489
-#	
+#
 #	### dataset pgl81
-#	
+#
 #	# gpl81 <- data.frame(moses.data$gpl81, check.names = TRUE)
 #	dataset <- "gpl81"
 #	cr <- mean(gpl81[, "age"])
@@ -382,8 +391,8 @@ runMoses <- function(flags, testdat, ensemble = FALSE, inputDr = getwd()) {
 #	gpl81_1_hx5.bestN5 <- bestCombos(gpl81_1_hx5, N = 5)
 #	save(gpl81_1_hx5.best, gpl81_1_hx5.bestN5, file = paste("gpl81_", i, "_best.rdata", sep = ""))
 #	setwd("..")
-#}	
-	
+#}
+
 # calculate Escore: for down make count negative and sum by feature
 Escore <- function(c2fc, add = TRUE) {
 	if(!identical(names(c2fc)[1:3], c("feature", "Freq", "level"))) return("error: input is not output of combo2fcount(... split = FALSE)")
@@ -397,7 +406,7 @@ Escore <- function(c2fc, add = TRUE) {
 	unique(out[order(-abs(out$Escore), out$feature),])
 }
 
-# save combined combo2fcount result to csv file with option to return value (ret = TRUE) and save with deleted hi-lo features 
+# save combined combo2fcount result to csv file with option to return value (ret = TRUE) and save with deleted hi-lo features
 combo2Fcsv <- function(combo, name = deparse(substitute(combo)), dir = ".", strip = FALSE, ret = FALSE, Escore = FALSE) {
 	name <- paste(name, "csv", sep = ".")
 	out <- combo2fcount(combo, stripX = strip, split = FALSE)
@@ -415,7 +424,7 @@ combo2Fcsv <- function(combo, name = deparse(substitute(combo)), dir = ".", stri
 # 	print(n)
 # 	scan(filename,what="",skip=n - N, nlines=N - drop,sep="\n", quiet=TRUE)
 # }
-# 
+#
 # getMout <- function(dir = ".", type = ".log", lines = 12, drop = 2) {
 # 	lfiles <- list.files(path = dir, pattern = type)
 # 	out <- vector("list", length(lfiles))
@@ -424,4 +433,52 @@ combo2Fcsv <- function(combo, name = deparse(substitute(combo)), dir = ".", stri
 # 	}
 # 	return(out)
 # }
+
+# # take mean of duplicate columns and round.
+# nms <- unique(colnames(testList$test[[1]]))
+# testList$test <-  lapply(testList$test,  function(x) ifelse(class(x) == "data.frame", x,
+# 																														t(apply(x, 1, function(y) sapply(nms, function(z) round(mean(y[nms == z])))))))
+# testList$train <-  lapply(testList$train,  function(x) t(apply(x, 1, function(y) sapply(nms, function(z) round(mean(y[nms == z]))))))
+# this results in 101 rows of NA  test case
+# genenas <- rownames(testtestList1[sapply(testtestList1[,1], is.na),])
+
+# }
+# for(i in 1:10) detach(2)
+# for(n in grep("file:", search(), fixed = TRUE, value = TRUE))
+
+# aggregate binary matrix by rownames
+combineByRow <- function(m) {
+  m <- m[ order(rownames(m)), ]
+
+  ## keep track of previous row name
+  prev <- rownames(m)[1]
+  i.start <- 1
+  i.end <- 1
+
+  ## cache the rownames -- profiling shows that it takes forever to look at them
+  m.rownames <- rownames(m)
+  stopifnot(all(!is.na(m.rownames)))
+
+  ## go through matrix in a loop, as we need to combine some unknown set of rows
+  for (i in 2:(1+nrow(m))) {
+
+    curr <- m.rownames[i]
+
+    ## if we found a new row name (or are at the end of the matrix), combine all rows and mark invalid rows
+    if (prev != curr || is.na(curr)) {
+
+      if (i.start < i.end) {
+        m[i.start,] <- apply(m[i.start:i.end,], 2, max)
+        m.rownames[(1+i.start):i.end] <- NA
+      }
+
+      prev <- curr
+      i.start <- i
+    } else {
+      i.end <- i
+    }
+  }
+
+  m[ which(!is.na(m.rownames)),]
+}
 
