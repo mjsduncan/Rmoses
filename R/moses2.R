@@ -45,7 +45,7 @@ mscore2vector <- function(str) eval(parse(text = paste0("c(", gsub("\\[| |.$", "
 # convert list of vectors of moses output strings to list(combo = vector of combo strings, score = list of combo score component matrices)
 moses2combo <- function(mout) {
   require(stringr)
-	# check if coplexity score is included in output string
+	# check if coplexity score is included in output string by checking for bracket
 	if(length(grep("\\[", mout[[1]][1])) == 0) {
   	mout <- lapply(mout, function(x) str_split_fixed(x, fixed(" "), 2))
   	out <- list(combo = lapply(mout, function(x) str_trim(x[, 2])), score = lapply(mout, function(x) x[, 1]))
@@ -54,12 +54,13 @@ moses2combo <- function(mout) {
 
   # generate complexity score matrix
   mout <- lapply(mout, function(x) str_split_fixed(x, fixed("["), 2))
-  score <- lapply(mout, function(x) vapply(x[, 2], mscore2vector, vector("numeric", 5), USE.NAMES = FALSE))
-  mout <- lapply(mout, function(x) x[, 1])
-  mout <- lapply(mout, function(x) str_split_fixed(x, fixed(" "), 2))
-  mout <- lapply(mout, function(x) str_trim(x[, 2]))
-  for(i in 1:length(score)) dimnames(score[[i]])[[2]] <- mout[[i]]
-  return(list(combo = mout, score = score))
+  score <- lapply(mout, function(x) x[, 2])
+  score <- lapply(score, function(x) t(vapply(x, mscore2vector, vector("numeric", 5), USE.NAMES = FALSE)))
+  combo <- lapply(mout, function(x) x[, 1])
+  combo <- lapply(combo, function(x) str_split_fixed(x, fixed(" "), 2))
+  combo <- lapply(combo, function(x) str_trim(x[, 2]))
+  for(i in 1:length(score)) dimnames(score[[i]]) <- list(combo[[i]], c("score", "penalized score", "complexity", "complexity penalty", "diversity penalty"))
+  return(list(combo = combo, score = score))
 }
 
 # make combo strings and feature dfs using moses2combo and combo2fcount
@@ -114,6 +115,8 @@ parseMout <- function(mout, strip = FALSE) {
 # define n >=2 argument boolean operators
 and <- function(x) Reduce("&", x)
 or <- function(x) Reduce("|", x)
+true <- TRUE
+false <- FALSE
 
 # turn boolean combo string vector into list of R function combinations
 combo.edit <- function(str) {
@@ -186,6 +189,26 @@ testClist <- function(clist, tdatlist, caseCol = 1) {
 	trainOut <- Map(testCstring, clist, tdatlist$train[order(names(tdatlist$train))], caserat = caseprev, casecol = caseCol)
 	testOut <- Map(testCstring, clist, tdatlist$test[order(names(tdatlist$test))], caserat = caseprev, casecol = caseCol)
 	return(list(train = trainOut, test = testOut))
+}
+
+## get combos with best test set scores
+bestTestCombos <- function(testClist_out, cutoff = NULL) {
+  out <- lapply(testClist_out$test, function(x) x[[2]])
+  out <- Reduce(rbind, out)
+  out <- aggregate(. ~ row.names(out), data = out, mean)
+  if(is.null(cutoff)) out <- out[out$Accuracy > out$AccuracyNull,] else out <- out[out$AccuracyPValue < cutoff,]
+  names(out)[1] <- "combo"
+  return(out[order(out[[2]], decreasing = TRUE),])
+}
+
+## generate matrix comparing scores from testing & training sets
+testVtrain <- function(testClist_out, scores = c("Accuracy", "AccuracyLower", "AccuracyUpper", "AccuracyNull", "AccuracyPValue", "Sensitivity", "Specificity", "Pos Pred Value", "Neg Pred Value", "Prevalence", "Detection Rate", "Detection Prevalence", "Balanced Accuracy")) {
+  out <- vector("list", length(testClist_out[[1]]))
+  for(i in 1:length(out)) {
+    out[[i]] <- list(test = testClist_out$test[[i]][[2]][, scores], train = testClist_out$train[[i]][[2]][, scores])
+  }
+  # out <- lapply(out, function(x))
+  return(out)
 }
 
 ### combine runs & extract best models
@@ -480,5 +503,17 @@ combineByRow <- function(m) {
   }
 
   m[ which(!is.na(m.rownames)),]
+}
+
+# helper functions
+# function to get ith element of each of a list of n length vectors
+ith_element_vector <- function(list, i = 1) {
+  if(i > length(list[[1]])) return("i is greater than vector length")
+  sapply(list, '[[', i)
+}
+
+ith_element_list <- function(list, i = 1) {
+  if(i > length(list[[1]])) return("i is greater than vector length")
+  lapply(list, '[[', i)
 }
 

@@ -1,0 +1,139 @@
+## eyob 6/2/17 ai-bio list
+Just reporting some preliminary results on what has been suggested as workaround on the long hours moses runs problem....
+
+The --enable-fs=1 option made running much faster and problem seems resolved. I think we won't be needing the --hc-crossover=1 flag (I believe it might degrade performance depending on the type of problems moses works with according to help file of moses).
+
+I have attached sample log files. For the unpermuted data with --enable-fs=1, moses finished in two minutes with about just 5K number of evaluations. But I think the models might be a bit poor than without the --enable-fs=1 used (I remember the same thing on accounting data) and Mike would find out after Meseret sends him the results.
+
+In the case of permuated data with --enable-fs=1, moses finished the 100K runs in about nine minutes but scores are poor (e.g. -5 and -4). So, I am letting it to 1M runs to see the level of score moses can reach.
+
+Just in my opinion, we can use the --enable-fs=1 flag for our permutation test, but we can get our main gene results report from the unpermuted data WITHOUT the --enable-fs=1 option.
+
+## nil 6/2/17 ai-bio list
+Hi Eyob, 
+
+that's really cool that fs-enable=1 speeds up that much learning. 
+
+I couldn't find any obvious sources of bottleneck, but I think you might 
+be able to improve the results by 
+
+1. setting --fs-target-size to a lower number, say try from 5 to 20 
+
+the reason is because all feature sets selected according to the log 
+could, if combined properly and ignoring the occam's razor, could give a 
+perfect score, as you may see in that log message 
+
+Inferred target score for that deme = 0 
+
+meaning there is a possibly humongous large candidate combining those 20 
+features that has the perfect score, 0. Decreasing that number of 
+features will reduce the search space. And if the highest score is still 
+0 (or close to), this might help MOSES to find a better solution. 
+
+2. setting --complexity-ratio to a lower value (say from 0.5 to 3.5) 
+
+It could be that MOSES is having a hard time trying to find something 
+both good and compact. I'm less sure about that one, but try it too. 
+
+Try #1 and #2 individually, and combined, and let me know what you get. 
+
+Nil 
+
+## meseret 6/4/15 ai-bio list
+Hi all,
+
+moses (10 metaruns each) using the 3 flags:
+--enable-fs=1 # very fast
+--hc-crossover=1 # slow, not bad yet. about 16 hr to complete
+Both # fast
+Best - msrt
+
+
+## mike 6/8/15 ai-bio list
+as per ben's suggestion, let's set moses iterations to 50k, with 5 runs per meta-run for the permutation test using the flags:  "-j8 --balance 1 -m 100000 -W 1 --output-cscore 1 --result-count 100 -rxxx".  attached is my code for doing 10 meta runs with random flags, with a bug fix in the function mergeAggList() for aggregating meta runs.
+
+meseret, can you redo these 10 meta runs with random flags:  
+
+ "-j8 --balance 1 -m 100000 -W 1 --output-cscore 1 --result-count 100 -rxxx --enable-fs=1"
+ "-j8 --balance 1 -m 100000 -W 1 --output-cscore 1 --result-count 100 -rxxx --hc-crossover=1"
+
+and eyob can you do a permutation test for "-j(max cores on hetzner) --balance 1 -m 100000 -W 1 --output-cscore 1 --result-count 100 -rxxx --enable-fs=1 --fs-algo=random"
+
+## nil 6/23/15 ai-bio list
+
+Hi, 
+
+as per our discussion last Monday, here's the alternative settings I 
+suggest, you'll need to combine all the options together. 
+
+1. 
+
+--reduct-knob-building-effort=1 
+
+disallow a heuristic to discard some knobs to be built. 
+
+2. 
+
+--hc-widen-search=1 
+
+keep searching the deme after finding an improvement. 
+
+3. 
+
+--fs-subsampling-ratio=0.5 
+
+subsample before performing feature selection. You may try more 
+aggressive ratios like 0.2 (though the dataset is small, be careful). 
+
+4. 
+
+--fs-algo=smd 
+
+combined with a small number of feature sets like 
+
+--fs-target-size=5 
+
+this is to search small feature sets taking into account interactions. 
+If this turns out to be a bottleneck let me know I can advice you some 
+alternative settings. 
+
+5. 
+
+--hc-crossover-min-neighbors=10000 
+
+don't run crossover unless the neighborhood is really large, i.e. search 
+for the best of the best if you can afford it. 
+
+6. 
+
+Set the number of evals to at least 100K 
+
+--max-evals=100000 
+
+That's it. It's probably gonna be slower but might get you very 
+different results than what you're getting so far. If it's really too 
+slow let me know. 
+
+Nil 
+
+## nil 6/24/15 ai-bio list
+On 06/23/2015 10:01 PM, Nil Geisweiller wrote: 
+> 3. 
+> 
+> --fs-subsampling-ratio=0.5 
+> 
+> subsample before performing feature selection. You may try more 
+> aggressive ratios like 0.2 (though the dataset is small, be careful). 
+
+Actually given how small the dataset is, you'd rather use 
+--fs-subsampling-ratio=0.8, if it doesn't give enough diversity between 
+runs, use a lower number. 
+
+Nil 
+
+## google hangouts 7/20/15:
+--fs-focus=all \
+  --fs-seed=init
+--complexity-ratio (3,2,1)  ----for overfitting problem. 1 doesnot make sense. 2 may make sense. You can also try without this flag
+--fs-target-size = 3,4 (you can try 2) ----for overfitting problem
+--fs-hc-crossover-pop-size=1000 -- fixed value

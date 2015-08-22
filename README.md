@@ -49,13 +49,20 @@ system2() help page for other values and other system2() variable options.
 **run combos on training and testing sets and generate confusion matrix**  
 `scoresNconfusionMatrix <- testClist(combosNscores$combo, listOfDataPartitions, fraction_of_cases_in_sample)`  
 
+**get combos scoring better than chance on test set**
+`testSetPerformance <- bestTestCombos(scoresNconfusionMatrix)`
+
+**make dataframe of genes/feataures**
+`featureCount <- combo2fcount(testSetPerformance[[1]])`
+
+**if test set scores are sufficiently high, get scores for complete data set**
 **combine fold results  and generate aggregate score and confusion matrix**  
 `aggScores <- aggResults(scoresNconfusionMatrix)`  
 
 *the "aggScores" dataframe is ranked by score so combos can be filtered by row index*  
 
 **make dataframe of genes/feataures**  
-`featureCount <- combo2fcount(names(aggScores[[2]]))`  
+`aggFeatureCount <- combo2fcount(names(aggScores[[2]]))`  
 
 **TODO:**  
 establish and implement a score cutoff to filter the combos  
