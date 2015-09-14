@@ -47,7 +47,7 @@ system2() help page for other values and other system2() variable options.
 `combosNscores <- moses2combo(mosesOutput)`  
 
 **run combos on training and testing sets and generate confusion matrix**  
-`scoresNconfusionMatrix <- testClist(combosNscores$combo, listOfDataPartitions, fraction_of_cases_in_sample)`  
+`scoresNconfusionMatrix <- testClist(combosNscores$combo, listOfDataPartitions)`  
 
 **get combos scoring better than chance on test set**
 `testSetPerformance <- bestTestCombos(scoresNconfusionMatrix)`

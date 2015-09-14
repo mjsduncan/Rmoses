@@ -45,7 +45,7 @@ mscore2vector <- function(str) eval(parse(text = paste0("c(", gsub("\\[| |.$", "
 # convert list of vectors of moses output strings to list(combo = vector of combo strings, score = list of combo score component matrices)
 moses2combo <- function(mout) {
   require(stringr)
-	# check if coplexity score is included in output string by checking for bracket
+	# check if complexity score is included in output string by checking for bracket
 	if(length(grep("\\[", mout[[1]][1])) == 0) {
   	mout <- lapply(mout, function(x) str_split_fixed(x, fixed(" "), 2))
   	out <- list(combo = lapply(mout, function(x) str_trim(x[, 2])), score = lapply(mout, function(x) x[, 1]))
@@ -82,6 +82,7 @@ combo2fcount <- function(combo, stripX = FALSE, split = FALSE) {
   return(out)
 }
 
+# makes list of combos with moses output scores df and feature count df ?
 parseMout <- function(mout, strip = FALSE) {
   require(stringr)
   m2c <- moses2combo(mout)
@@ -177,6 +178,8 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 
 # evaluate list of combo strings & compute catagorization metrics.  "cc_ratio" is cases/1's over cases + controls/0's
 # returns list of lists of pairs of score & confusion matrices for training sets and test sets
+# list of cross validation runs for combos and data sets are ordered to insure correct match
+# TODO: make sure validation run names are identical?
 testClist <- function(clist, tdatlist, caseCol = 1) {
 
 	# compute case prevalence
@@ -191,25 +194,50 @@ testClist <- function(clist, tdatlist, caseCol = 1) {
 	return(list(train = trainOut, test = testOut))
 }
 
-## get combos with best test set scores
-bestTestCombos <- function(testClist_out, cutoff = NULL) {
+## get combos with best test set scores, with optional pvalue alpha for null hypothesis guess value 50-50?
+# if no alpha is given then only combos with accuracy > than AccuracyNull are returned
+bestTestCombos <- function(testClist_out, alpha = NULL) {
   out <- lapply(testClist_out$test, function(x) x[[2]])
   out <- Reduce(rbind, out)
   out <- aggregate(. ~ row.names(out), data = out, mean)
-  if(is.null(cutoff)) out <- out[out$Accuracy > out$AccuracyNull,] else out <- out[out$AccuracyPValue < cutoff,]
+  if(is.null(alpha)) out <- out[out$Accuracy > out$AccuracyNull,] else out <- out[out$AccuracyPValue < alpha | out$AccuracyPValue > 1 - alpha,]
   names(out)[1] <- "combo"
   return(out[order(out[[2]], decreasing = TRUE),])
 }
 
-## generate matrix comparing scores from testing & training sets
+## generate plots comparing scores from testing & training sets
+# make list of 3d arrays of selected metrics for each cross validation run (combo x score x test/train)
 testVtrain <- function(testClist_out, scores = c("Accuracy", "AccuracyLower", "AccuracyUpper", "AccuracyNull", "AccuracyPValue", "Sensitivity", "Specificity", "Pos Pred Value", "Neg Pred Value", "Prevalence", "Detection Rate", "Detection Prevalence", "Balanced Accuracy")) {
+  require(abind)
   out <- vector("list", length(testClist_out[[1]]))
+  names(out) <- names(testClist_out[[1]])
   for(i in 1:length(out)) {
     out[[i]] <- list(test = testClist_out$test[[i]][[2]][, scores], train = testClist_out$train[[i]][[2]][, scores])
+    out[[i]] <- abind(out[[i]]$test, out[[i]]$train, along = 3)
+    dimnames(out[[i]])[[3]] <- c("test", "train")
   }
   # out <- lapply(out, function(x))
   return(out)
 }
+
+# plot train vs test with different color for each cross-validation run
+tvtScatter <- function(testVtrain) {
+  # combine c-v runs into one df
+  len <- dim(testVtrain[[1]])[2]
+  data <- vector("list", len)
+  names(data) <- dimnames(testVtrain[[1]])[[2]]
+  out <- data
+  for(i in 1:len) {
+    for(j in names(testVtrain)) data[[i]] <- rbind(data[[i]], data.frame(run = j, testVtrain[[j]][, i,]))
+  }
+  # generate plot for each metric
+  require(ggplot2)
+  # qplot(data = mr5scores$Accuracy, x = train, y = test, color = run, ) + stat_smooth(method="lm")
+  # qplot(data = mr5scores$Accuracy, x = train, y = test, color = run, geom = "jitter") + stat_smooth(method="lm")
+  # save & return data
+  return(data)
+}
+
 
 ### combine runs & extract best models
 # extract, combine & recast results matrices from testClist()
@@ -238,17 +266,17 @@ getResults <- function(testOut) {
 	return(out)
 }
 
+# vector distance defined as sum of number of differences/false results.  equals negative of moses binary raw score.
+vdist <- function(x, y) {
+  if(length(x) != length(y)) return("vectors have different lengths")
+  sum(x != y, na.rm = TRUE)
+}
+
 # sort results by increasing distance combo score vector from case vector of samples
 sortResults <- function(aggOut) {
 	out <- aggOut[c(grep("^case$", row.names(aggOut)), grep("^case$", row.names(aggOut), invert = TRUE)), gtools::mixedorder(names(aggOut))]
  	out <- cbind(out, score = apply(as.matrix(out), 1, function(x) vdist(out[1,], x)))
 	return(out[order(out$score, rowSums(is.na(out))),])
-}
-
-# vector distance defined as sum of number of differences/false results.  equals negative of moses binary raw score.
-vdist <- function(x, y) {
-	if(length(x) != length(y)) return("vectors have different lengths")
-	sum(x != y, na.rm = TRUE)
 }
 
 aggScore <- function(aggOut) {
@@ -276,6 +304,24 @@ aggResults <- function(testOut) {
 	out <- col2name(out)
 	out <- sortResults(out)
 	return(list(results = out, confusionMatrix = aggScore(out)))
+}
+
+# function to merge resulting list of aggregated moses runs into 1000 row results matrix & confusion matrix
+# (top 10 combos x 10 cross-validation runs x 10 meta-runs)
+# aggScores <- lapply(scoresNconfusionMatrix, aggResults)
+# mergedRuns <- mergeAggList(aggScores)
+
+mergeAggList <- function(aglst) {
+  results <- lapply(aglst, function(x) x$results[, order(names(x$results))])
+  results <- Reduce(rbind, lapply(results, name2col))
+  results <- results[!grepl("^case", results),]
+  confusionMatrix <- lapply(aglst, function(x) x$confusionMatrix)
+  confusionMatrix <- Reduce(rbind, lapply(confusionMatrix, name2col))
+  out <- list(results = results[order(results[,length(results[1,])], decreasing = TRUE),],
+              confusionMatrix = confusionMatrix[order(confusionMatrix[, 14], decreasing = TRUE),])
+  out <- lapply(out, unique)
+  out <- lapply(out, col2name)
+  return(out)
 }
 
 ### ensemble validation
@@ -314,6 +360,25 @@ testCElist <- function(celist, tdatlist) {
 	rownames(metrics) <- names(resultOut)
 	return(list(results = resultOut, confusionMatrix = metrics))
 }
+
+### figure out size of moses output
+# helper function to count occurances of a particular character in each string of a character vector
+
+countCharOccurrences <- function(char, s) {
+  s2 <- gsub(char, "", s)
+  return (nchar(s) - nchar(s2))
+}
+
+# count variables, binary operators, and negations in combo set
+comboSize <- function(combo) {
+  c(features = countCharOccurrences("\\$", combo), operators = countCharOccurrences("\\(", combo), nots = countCharOccurrences("!", combo))
+}
+
+# get means from vector of combos
+meanComboSize <- function(comboVector) rowMeans(sapply(comboVector, comboSize, USE.NAMES = FALSE))
+# example output
+# features Noperators       nots
+#   11.139      6.924      5.865
 
 ### apply median norm to matrix by columns
 med.normalize <- function(mat) {
