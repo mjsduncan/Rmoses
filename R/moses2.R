@@ -181,23 +181,35 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 # list of cross validation runs for combos and data sets are ordered to insure correct match
 # TODO: make sure validation run names are identical?
 testClist <- function(clist, tdatlist, caseCol = 1) {
-
+  require(gtools)
 	# compute case prevalence
 	case <- tdatlist$test[[1]][, caseCol]
 	caseprev <- sum(case) / length(case)
 	if(is.nan(caseprev) | caseprev == 0) stop("malformed case column")
 
-	clist <- clist[order(names(clist))]
+	clist <- clist[mixedorder(names(clist))]
 	tdatlist$test[["fold_index"]] <- NULL
-	trainOut <- Map(testCstring, clist, tdatlist$train[order(names(tdatlist$train))], caserat = caseprev, casecol = caseCol)
-	testOut <- Map(testCstring, clist, tdatlist$test[order(names(tdatlist$test))], caserat = caseprev, casecol = caseCol)
+	trainOut <- Map(testCstring, clist, tdatlist$train[mixedorder(names(tdatlist$train))], caserat = caseprev, casecol = caseCol)
+	testOut <- Map(testCstring, clist, tdatlist$test[mixedorder(names(tdatlist$test))], caserat = caseprev, casecol = caseCol)
 	return(list(train = trainOut, test = testOut))
 }
 
 ## get combos with best test set scores, with optional pvalue alpha for null hypothesis guess value 50-50?
 # if no alpha is given then only combos with accuracy > than AccuracyNull are returned
+# output ordered by decreasing accuracy
 bestTestCombos <- function(testClist_out, alpha = NULL) {
   out <- lapply(testClist_out$test, function(x) x[[2]])
+  out <- Reduce(rbind, out)
+  out <- aggregate(. ~ row.names(out), data = out, mean)
+  if(is.null(alpha)) out <- out[out$Accuracy > out$AccuracyNull,] else out <- out[out$AccuracyPValue < alpha | out$AccuracyPValue > 1 - alpha,]
+  names(out)[1] <- "combo"
+  return(out[order(out[[2]], decreasing = TRUE),])
+}
+
+## get combos with best training set scores, with optional pvalue alpha for null hypothesis guess value 50-50?
+# if no alpha is given then only combos with accuracy > than AccuracyNull are returned
+bestTrainCombos <- function(testClist_out, alpha = NULL) {
+  out <- lapply(testClist_out$train, function(x) x[[2]])
   out <- Reduce(rbind, out)
   out <- aggregate(. ~ row.names(out), data = out, mean)
   if(is.null(alpha)) out <- out[out$Accuracy > out$AccuracyNull,] else out <- out[out$AccuracyPValue < alpha | out$AccuracyPValue > 1 - alpha,]
@@ -231,7 +243,7 @@ tvtScatter <- function(testVtrain) {
     for(j in names(testVtrain)) data[[i]] <- rbind(data[[i]], data.frame(run = j, testVtrain[[j]][, i,]))
   }
   # generate plot for each metric
-  require(ggplot2)
+  # require(ggplot2)
   # qplot(data = mr5scores$Accuracy, x = train, y = test, color = run, ) + stat_smooth(method="lm")
   # qplot(data = mr5scores$Accuracy, x = train, y = test, color = run, geom = "jitter") + stat_smooth(method="lm")
   # save & return data
@@ -310,7 +322,6 @@ aggResults <- function(testOut) {
 # (top 10 combos x 10 cross-validation runs x 10 meta-runs)
 # aggScores <- lapply(scoresNconfusionMatrix, aggResults)
 # mergedRuns <- mergeAggList(aggScores)
-
 mergeAggList <- function(aglst) {
   results <- lapply(aglst, function(x) x$results[, order(names(x$results))])
   results <- Reduce(rbind, lapply(results, name2col))
@@ -324,44 +335,58 @@ mergeAggList <- function(aglst) {
   return(out)
 }
 
-### ensemble validation
-getScores <- function(m2cOut, penalized = FALSE) {
-	out <- lapply(m2cOut$score, function(x) x[1 + penalized,])
-	return(out)
+# function to apply vector of combos to data set matrix and return ensemble scores.  rows for results of ensemble applied to each sample are added to output$results and ensemble accuracy is computed and printed.  weighting of ensemble components by accuracy and ppd are implemented but usefulness/correctness isn't validated (~ 0.1% cumulative accuracy improvement in one example)
+# TODO:  add complete score row to individual scores in output$score
+testCensemble <- function(cvec, tdatframe, caseCol = 1) {
+
+  # compute case prevalence
+  case <- tdatframe[, caseCol]
+  caseprev <- sum(case) / length(case)
+  if(is.nan(caseprev) | caseprev == 0) stop("malformed case column")
+  out <- testCstring(cvec, tdatframe, caserat = caseprev, casecol = caseCol)
+
+  # compute ensemble scores
+  eScore <- colMeans(out$result[-1,])
+  aWeScore <- out$score$Accuracy %*% as.matrix(out$result[-1,]) / sum(out$score$Accuracy)
+  ppvWeScore <- out$score$`Pos Pred Value` %*% as.matrix(out$result[-1,]) / sum(out$score$`Pos Pred Value`)
+  senWeScore <- out$score$Sensitivity %*% as.matrix(out$result[-1,]) / sum(out$score$Sensitivity)
+  out$result <- rbind(eScore, aWeScore, ppvWeScore, senWeScore, out$result)
+  rownames(out$result)[1:4] <- c("mean", "acc_wt_mean", "ppd_wt_mean", "sen_wt_mean")
+
+  # compute ensemble score accuracies
+  nSamples <- dim(tdatframe)[1]
+  print(paste0("ensemble mean accuracy = ", 1 - (sum(abs(round(out$result["mean",]) - out$result["case",])) / nSamples)))
+  print(paste0("accuracy weighted mean = ", 1 - (sum(abs(round(out$result["acc_wt_mean",]) - out$result["case",])) / nSamples)))
+  print(paste0("ppd weighted mean = ", 1 - (sum(abs(round(out$result["ppd_wt_mean",]) - out$result["case",])) / nSamples)))
+  print(paste0("sensitivity weighted mean = ", 1 - (sum(abs(round(out$result["sen_wt_mean",]) - out$result["case",])) / nSamples)))
+  return(out)
 }
 
-getBestCombos <- function(slist) {
-	best <- lapply(slist, max)
-	out <- mapply(function(x, y) Filter(function(z) z == y, x), slist, best)
-	return(lapply(out, names))
+testCensXrun <- function(testClist_out, alpha = 0.05, top = 1) {
+  scores <- lapply(testVtrain(testClist_out, c("Accuracy", "AccuracyPValue", "Pos Pred Value", "Sensitivity")), function(x) x[,, "train"])
+  scores <- lapply(scores, function(x) x[x[,"AccuracyPValue"] < 0.05, -2])
+  scores <- lapply(scores, function(x) x[order(x[,"Accuracy"])[1:round(top * length(x[,1]))],])
+  out <- lapply(testClist_out$test, function(x) x$result)
+  out <- mapply(function(x, y) x[c("case", rownames(y)),], out, scores, SIMPLIFY = FALSE)
+  # compute ensemble scores by run
+  eScore <- lapply(out, function(x) colMeans(x[-1,]))
+  aWeScore <- mapply(function(x, y) x[, "Accuracy"] %*% as.matrix(y[-1,]) / sum(x[, "Accuracy"]), scores, out, SIMPLIFY = FALSE)
+  ppvWeScore <- mapply(function(x, y) x[, "Pos Pred Value"] %*% as.matrix(y[-1,]) / sum(x[, "Pos Pred Value"]), scores, out, SIMPLIFY = FALSE)
+  senWeScore <- mapply(function(x, y) x[, "Sensitivity"] %*% as.matrix(y[-1,]) / sum(x[, "Sensitivity"]), scores, out, SIMPLIFY = FALSE)
+  out <- mapply(rbind, eScore, aWeScore, ppvWeScore, senWeScore, out, SIMPLIFY = FALSE)
+  for(i in 1:length(out)) rownames(out[[i]])[1:4] <- c("mean", "acc_wt_mean", "ppd_wt_mean", "sen_wt_mean")
+
+  # compute ensemble score accuracies
+  nSamples <- sapply(out, function(x) dim(x)[2] - 4)
+  `ensemble mean accuracy` = mapply(function(x, y) 1 - sum(abs(round(x["mean",]) - x["case",])) / y, out, nSamples)
+  `accuracy weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["acc_wt_mean",]) - x["case",])) / y, out, nSamples)
+  `ppd weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["ppd_wt_mean",]) - x["case",])) / y, out, nSamples)
+  `sensitivity weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["sen_wt_mean",]) - x["case",])) / y, out, nSamples)
+  print(cbind(`ensemble mean accuracy`, `accuracy weighted mean`, `ppd weighted mean`, `sensitivity weighted mean`))
+  return(out)
 }
 
-ensemble.score <- function(resultMatrix) {
-	score <- apply(resultMatrix, 2, function(x) round(median(x)))
-	return(score)
-}
-
-testCElist <- function(celist, tdatlist) {
-	case <- tdatlist$test[[1]]$case
-	caseprev <- sum(case) / length(case)
-	celist <- celist[order(names(celist))]
-	tdatlist$test[["fold_index"]] <- NULL
-	resultOut <- Map(testCstring, celist, tdatlist$test[order(names(tdatlist))], caserat = caseprev, return.cm = FALSE)
-	score <- lapply(resultOut, function(x) ensemble.score(x[-1,]))
-	resultOut <- Map(rbind, score = score, resultOut)
-	m <- length(resultOut)
-	metrics <- vector("list", m)
-	for(i in 1:m){
-		fresult <- as.factor(unlist(resultOut[[i]]["score",]))
-		levels(fresult) <- c(0, 1)
-		metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = caseprev)
-	}
-	metrics <- cml2df(metrics)
-	rownames(metrics) <- names(resultOut)
-	return(list(results = resultOut, confusionMatrix = metrics))
-}
-
-### figure out size of moses output
+## figure out size of moses output
 # helper function to count occurances of a particular character in each string of a character vector
 
 countCharOccurrences <- function(char, s) {
@@ -374,13 +399,25 @@ comboSize <- function(combo) {
   c(features = countCharOccurrences("\\$", combo), operators = countCharOccurrences("\\(", combo), nots = countCharOccurrences("!", combo))
 }
 
+## misc helper functions
+# function to get ith element of each of a list of n length vectors
+ith_element_vector <- function(list, i = 1) {
+  if(i > length(list[[1]])) return("i is greater than vector length")
+  sapply(list, '[[', i)
+}
+
+ith_element_list <- function(list, i = 1) {
+  if(i > length(list[[1]])) return("i is greater than vector length")
+  lapply(list, '[[', i)
+}
+
 # get means from vector of combos
 meanComboSize <- function(comboVector) rowMeans(sapply(comboVector, comboSize, USE.NAMES = FALSE))
 # example output
 # features Noperators       nots
 #   11.139      6.924      5.865
 
-### apply median norm to matrix by columns
+# apply median norm to matrix by columns
 med.normalize <- function(mat) {
   out <- mat
   for (i in seq(dim(mat)[2])) {
@@ -391,7 +428,45 @@ med.normalize <- function(mat) {
   return(out)
 }
 
-# unfinished and scrap code
+## ensemble validation?
+# i can't remember how this works or where it is from.
+getScores <- function(m2cOut, penalized = FALSE) {
+  out <- lapply(m2cOut$score, function(x) x[1 + penalized,])
+  return(out)
+}
+
+getBestCombos <- function(slist) {
+  best <- lapply(slist, max)
+  out <- mapply(function(x, y) Filter(function(z) z == y, x), slist, best)
+  return(lapply(out, names))
+}
+
+ensemble.score <- function(resultMatrix) {
+  score <- apply(resultMatrix, 2, function(x) round(median(x)))
+  return(score)
+}
+
+testCElist <- function(celist, tdatlist) {
+  case <- tdatlist$test[[1]]$case
+  caseprev <- sum(case) / length(case)
+  celist <- celist[order(names(celist))]
+  tdatlist$test[["fold_index"]] <- NULL
+  resultOut <- Map(testCstring, celist, tdatlist$test[order(names(tdatlist))], caserat = caseprev, return.cm = FALSE)
+  score <- lapply(resultOut, function(x) ensemble.score(x[-1,]))
+  resultOut <- Map(rbind, score = score, resultOut)
+  m <- length(resultOut)
+  metrics <- vector("list", m)
+  for(i in 1:m){
+    fresult <- as.factor(unlist(resultOut[[i]]["score",]))
+    levels(fresult) <- c(0, 1)
+    metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = caseprev)
+  }
+  metrics <- cml2df(metrics)
+  rownames(metrics) <- names(resultOut)
+  return(list(results = resultOut, confusionMatrix = metrics))
+}
+
+## unfinished and scrap code
 #--------------------------
 
 ### wrap it up
@@ -568,17 +643,5 @@ combineByRow <- function(m) {
   }
 
   m[ which(!is.na(m.rownames)),]
-}
-
-# helper functions
-# function to get ith element of each of a list of n length vectors
-ith_element_vector <- function(list, i = 1) {
-  if(i > length(list[[1]])) return("i is greater than vector length")
-  sapply(list, '[[', i)
-}
-
-ith_element_list <- function(list, i = 1) {
-  if(i > length(list[[1]])) return("i is greater than vector length")
-  lapply(list, '[[', i)
 }
 
