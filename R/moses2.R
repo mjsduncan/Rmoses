@@ -17,14 +17,16 @@ makeMpartitions <- function(data, k = 10, control = 1, dir = "./", namestr = dep
     TestOut[[i]] <- data[-flds[[i]],]
   }
   TestOut[["fold_index"]] <- as.data.frame(flds)
-  return(list(train = TrainOut, test = TestOut))
+  out <- list(train = TrainOut, test = TestOut)
+  save(out, file = paste0(namestr, "_data.rdata"))
+  return(out)
 }
 
 # run moses on a file.  log file is named as input file name to first "." plus ".log".  output can be a file name.
 moses <- function( flags = "", DSVfile = "", output = TRUE, ...) {
   if(flags == "help") flags <- "--help"          # moses(help) -> moses --help
   if(flags == "version")  flags <- "--version"    # moses() -> moses --version
-  if(DSVfile != "") flags <- paste("--input-file", DSVfile, "--log-file", paste(word(DSVfile, sep = fixed(".")), ".log", sep = ""), flags)
+  if(DSVfile != "") flags <- paste("--input-file", DSVfile, "--log-file", paste0(word(DSVfile, sep = fixed(".")), ".log"), flags)
   system2("moses", args=flags, stdout = output, ...)
 }
 
@@ -35,6 +37,7 @@ runMfolder <- function(flags = "", dir = getwd(),  output = TRUE) {
   out <- vector("list", length(files))
   names(out) <- word(files, sep = fixed("."))
   for(i in seq_along(files)) out[[i]] <- moses(flags, files[i], output)
+  save(out, file = paste0(str_split_fixed(files[1], "_", 1), ".rdata"))
   return(out)
 }
 
@@ -103,7 +106,7 @@ parseMout <- function(mout, strip = FALSE) {
 #
 # Prevalence = (A+C)/(A+B+C+D)
 #
-# PPV = (sensitivity * Prevalence)/((sensitivity*Prevalence) + ((1-specificity)*(1-Prevalence)))
+# PPV = (sensitivity * Prevalence)/((sensitivity*Prevalence) + ((1-specificity)*(1-Prevalence))) = A/(A+D)
 #
 # NPV = (specificity * (1-Prevalence))/(((1-sensitivity)*Prevalence) + ((specificity)*(1-Prevalence)))
 #
@@ -201,10 +204,16 @@ bestTestCombos <- function(testClist_out, alpha = NULL) {
   out <- lapply(testClist_out$test, function(x) x[[2]])
   out <- Reduce(rbind, out)
   out <- aggregate(. ~ row.names(out), data = out, mean)
-  if(is.null(alpha)) out <- out[out$Accuracy > out$AccuracyNull,] else out <- out[out$AccuracyPValue < alpha | out$AccuracyPValue > 1 - alpha,]
+  if(is.null(alpha)) out <- out[out$Accuracy > out$AccuracyNull,] else out <- out[out$AccuracyPValue < alpha,]
   names(out)[1] <- "combo"
   return(out[order(out[[2]], decreasing = TRUE),])
 }
+
+# TODO:  fix bug where duplicate combos are not removed but have a number appended to end of combo string!!
+# function to add before reduce:  dropDuplicateCombos(out)
+# make list of list of rownames
+# unlist and find duplicates
+# use names of names to delete duplicate rowname rows
 
 ## get combos with best training set scores, with optional pvalue alpha for null hypothesis guess value 50-50?
 # if no alpha is given then only combos with accuracy > than AccuracyNull are returned
@@ -212,7 +221,7 @@ bestTrainCombos <- function(testClist_out, alpha = NULL) {
   out <- lapply(testClist_out$train, function(x) x[[2]])
   out <- Reduce(rbind, out)
   out <- aggregate(. ~ row.names(out), data = out, mean)
-  if(is.null(alpha)) out <- out[out$Accuracy > out$AccuracyNull,] else out <- out[out$AccuracyPValue < alpha | out$AccuracyPValue > 1 - alpha,]
+  if(is.null(alpha)) out <- out[out$Accuracy > out$AccuracyNull,] else out <- out[out$AccuracyPValue < alpha,]
   names(out)[1] <- "combo"
   return(out[order(out[[2]], decreasing = TRUE),])
 }
@@ -254,7 +263,7 @@ tvtScatter <- function(testVtrain) {
 ### combine runs & extract best models
 # extract, combine & recast results matrices from testClist()
 name2col <- function(df, name = "name") {
-	df <- cbind(gsub("`", "", rownames(df), fixed = TRUE), df, stringsAsFactors = FALSE)
+	df <- cbind(rownames(df), df, stringsAsFactors = FALSE)
 	rownames(df) <- NULL
 	names(df)[1] <- name
 	return(df)
@@ -364,7 +373,7 @@ testCensemble <- function(cvec, tdatframe, caseCol = 1) {
 
 testCensXrun <- function(testClist_out, alpha = 0.05, top = 1) {
   scores <- lapply(testVtrain(testClist_out, c("Accuracy", "AccuracyPValue", "Pos Pred Value", "Sensitivity")), function(x) x[,, "train"])
-  scores <- lapply(scores, function(x) x[x[,"AccuracyPValue"] < 0.05, -2])
+  scores <- lapply(scores, function(x) x[x[,"AccuracyPValue"] < alpha, -2])
   scores <- lapply(scores, function(x) x[order(x[,"Accuracy"])[1:round(top * length(x[,1]))],])
   out <- lapply(testClist_out$test, function(x) x$result)
   out <- mapply(function(x, y) x[c("case", rownames(y)),], out, scores, SIMPLIFY = FALSE)
@@ -383,6 +392,62 @@ testCensXrun <- function(testClist_out, alpha = 0.05, top = 1) {
   `ppd weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["ppd_wt_mean",]) - x["case",])) / y, out, nSamples)
   `sensitivity weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["sen_wt_mean",]) - x["case",])) / y, out, nSamples)
   print(cbind(`ensemble mean accuracy`, `accuracy weighted mean`, `ppd weighted mean`, `sensitivity weighted mean`))
+  return(out)
+}
+
+# convert fold_index df of training sample number X run to boolean matrix of run X sample number
+samplesInTrainingSet <- function(fold_index) {
+  runs <- names(fold_index)
+  samples <- unique(unlist(fold_index))
+  out <-
+    array(
+      data = logical(length(runs) * length(samples)), dim = c(length(runs), length(samples)), dimnames = list(runs, as.character(sort(samples)))
+    )
+  for(i in 1:length(runs)) out[i,] <- colnames(out) %in% as.character(fold_index[[rownames(out)[i]]])
+  return(out)
+}
+
+# helper function to drop list elements not meeting condition
+checklist <- function(list, cond) {
+
+}
+
+# using boolean matrix output of samplesInTrainingSet(), get accuracy of ensemble on testing/out-of-sample data
+testCensXsample <- function(testClist_out, sits_out, part = "train", alpha = 0.05, score = "Accuracy", scoreMin = NULL, top = NULL) {
+  stopifnot(score %in% c("Accuracy", "Pos Pred Value", "Sensitivity"))
+  # drop not significant and worst combos from part (test or train) partition
+  bestCombos <- lapply(testVtrain(testClist_out, c("Accuracy", "AccuracyPValue", "Pos Pred Value", "Sensitivity")), function(x) x[,, part])
+  bestCombos <- lapply(bestCombos, function(x) x[x[,"AccuracyPValue"] < alpha, -2])
+  if(!is.null(scoreMin)) bestCombos <- lapply(bestCombos, function(x) x[x[, score] >= scoreMin,])
+  # bestCombos <- lapply(bestCombos, function(x) x[order(x[, score]),])
+  if(!is.null(top)) bestCombos <- lapply(bestCombos, function(x) x[order(x[, score])[1:round(top * length(x[,1]))],])
+  bestCombos <- lapply(bestCombos, function(x) c("case", rownames(x)))
+  testClist_out <- mapply(function(x, y) x$result[y,], testClist_out$test, bestCombos, SIMPLIFY = FALSE)
+  # make list whose elements are a list for each sample of combo testing run results for each run not in the training set of the sample
+  out <- lapply(as.data.frame(sits_out), function(x) lapply(testClist_out[!x], name2col))
+  # drop all results except for the named sample
+  samples <- names(out)
+  out <- mapply(function(x, y) lapply(x, function(z) z[, c("name", y)]), out, samples, SIMPLIFY = FALSE)
+  # concatenate sample combo lists
+  out <- lapply(out, function(x) unique(Reduce(rbind, x)))
+  # drop empty sample result dfs
+  out <- out[!sapply(out, is.null)]
+  out <- out[sapply(out, function(x) dim(x)[1] > 2)]
+  # calculate ensemble scores
+  for(n in seq_along(out)) names(out[[n]])[2] <- "result"
+  eScore <- lapply(out, function(x) data.frame(name = "mean", result = mean(x[-1, 2])))
+#   aWeScore <- out$score$Accuracy %*% as.matrix(out$result[-1,]) / sum(out$score$Accuracy)
+#   ppvWeScore <- out$score$`Pos Pred Value` %*% as.matrix(out$result[-1,]) / sum(out$score$`Pos Pred Value`)
+#   senWeScore <- out$score$Sensitivity %*% as.matrix(out$result[-1,]) / sum(out$score$Sensitivity)
+  out <- mapply(rbind, eScore, out, SIMPLIFY = FALSE) # Map(, aWeScore, ppvWeScore, senWeScore
+#   for(n in seq_along(out)) rownames(out)[1] <- "mean" # , "acc_wt_mean", "ppd_wt_mean", "sen_wt_mean")
+  scores <- sapply(out, function(x) x[1:2, 2])
+  if(is.null(dim(scores))) {
+    print("all combos have been filtered out")
+    return(NULL)
+    }
+  print(paste("mean out-of-sample accuracy of combo mean ensembles is", 1 - sum(abs(round(scores[1,]) - scores[2,]))/dim(scores)[2]))
+  print(paste(dim(sits_out)[2] - dim(scores)[2], "samples were in the training sets of all", dim(sits_out)[1], "cross-validation runs", "and not included in the mean ensemble score (out of", dim(sits_out)[2], "total samples)"))
   return(out)
 }
 
