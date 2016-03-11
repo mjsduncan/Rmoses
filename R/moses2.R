@@ -37,7 +37,7 @@ runMfolder <- function(flags = "", dir = getwd(),  output = TRUE) {
   out <- vector("list", length(files))
   names(out) <- word(files, sep = fixed("."))
   for(i in seq_along(files)) out[[i]] <- moses(flags, files[i], output)
-  save(out, file = paste0(str_split_fixed(files[1], "_", 1), ".rdata"))
+  save(out, file = paste0(str_split_fixed(files[1], "_", 2)[1], ".rdata"))
   return(out)
 }
 
@@ -74,12 +74,15 @@ combo2fcount <- function(combo, stripX = FALSE, split = FALSE) {
 	combo <- unlist(strsplit(combo, split = " ", fixed = TRUE))
 	out$up <- grep("!", combo, value = TRUE, fixed = TRUE, invert = TRUE)
 	out$down <- substr(grep("!", combo, value = TRUE, fixed = TRUE), 2, 100)
+	if(length(out$down) == 0) out$down <- NULL
 	if(stripX) out <- lapply(out, substr, 2, 100)
 	out <- lapply(out, function (feature) as.data.frame(table(feature), stringsAsFactors = FALSE))
 	if(split) return(lapply(out, function(x) x[order(x$Freq, decreasing = TRUE),]))
 	out$up$level <- "up"
-	out$down$level <- "down"
-	out <- rbind(out$up, out$down)[order(rbind(out$up, out$down)$Freq, decreasing = TRUE),]
+	if(is.null(out$down)) out <- out$up else {
+	  out$down$level <- "down"
+	  out <- rbind(out$up, out$down)[order(rbind(out$up, out$down)$Freq, decreasing = TRUE),]
+	}
 	out[order(out$Freq, out$feature, decreasing = TRUE),]
   rownames(out) <- NULL
   return(out)
