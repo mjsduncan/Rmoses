@@ -37,7 +37,7 @@ runMfolder <- function(flags = "", dir = getwd(),  output = TRUE) {
   out <- vector("list", length(files))
   names(out) <- word(files, sep = fixed("."))
   for(i in seq_along(files)) out[[i]] <- moses(flags, files[i], output)
-  save(out, file = paste0(str_split_fixed(files[1], "_", 2)[1], ".rdata"))
+  save(out, file = paste0(str_split_fixed(files[1], "_", 2)[1], "_out.rdata"))
   return(out)
 }
 
