@@ -15,7 +15,7 @@
 FROM opencog/cogutils
 
 # Install R and caret dependencies
-RUN sudo apt-get update && sudo apt-get upgrade && sudo apt-get -y install r-base r-cran-rcpp r-cran-ggplot2 r-cran-car
+RUN sudo apt-get update && sudo apt-get upgrade && sudo apt-get -y install r-base r-cran-rcpp r-cran-ggplot2 r-cran-car r-cran-gdata
 RUN sudo R -e 'install.packages("caret", repos = "http://cran.r-project.org")'
 
 # Install moses
