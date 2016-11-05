@@ -18,7 +18,7 @@ makeMpartitions <- function(data, k = 10, control = 1, dir = "./", namestr = dep
   }
   TestOut[["fold_index"]] <- as.data.frame(flds)
   out <- list(train = TrainOut, test = TestOut)
-  save(out, file = paste0(namestr, "_data.rdata"))
+  saveRDS(out, file = paste0(namestr, ".rds"))
   return(out)
 }
 
@@ -50,12 +50,16 @@ moses2combo <- function(mout) {
   require(stringr)
 	# check if complexity score is included in output string by checking for bracket
 	if(length(grep("\\[", mout[[1]][1])) == 0) {
-  	mout <- lapply(mout, function(x) str_split_fixed(x, fixed(" "), 2))
+	  # mout <-str_replace_all(mout, "and\\(", "and_(")
+	  # mout <-str_replace_all(mout, "or\\(", "or_(")
+	  mout <- lapply(mout, function(x) str_split_fixed(x, fixed(" "), 2))
   	out <- list(combo = lapply(mout, function(x) str_trim(x[, 2])), score = lapply(mout, function(x) x[, 1]))
   	return(out)
   }
 
   # generate complexity score matrix
+  # mout <-str_replace_all(mout, "and\\(", "and_(")
+  # mout <-str_replace_all(mout, "or\\(", "or_(")
   mout <- lapply(mout, function(x) str_split_fixed(x, fixed("["), 2))
   score <- lapply(mout, function(x) x[, 2])
   score <- lapply(score, function(x) t(vapply(x, mscore2vector, vector("numeric", 5), USE.NAMES = FALSE)))
@@ -70,7 +74,7 @@ moses2combo <- function(mout) {
 combo2fcount <- function(combo, stripX = FALSE, split = FALSE) {
 	out <- vector("list", 2)
 	names(out) <- c("up", "down")
-	combo <- gsub("and|or|[`()$]", "", unlist(combo))
+	combo <- gsub("and_|or_|[`()$]", "", unlist(combo))
 	combo <- unlist(strsplit(combo, split = " ", fixed = TRUE))
 	out$up <- grep("!", combo, value = TRUE, fixed = TRUE, invert = TRUE)
 	out$down <- substr(grep("!", combo, value = TRUE, fixed = TRUE), 2, 100)
@@ -120,6 +124,8 @@ parseMout <- function(mout, strip = FALSE) {
 # Balanced Accuracy = (Sensitivity+Specificity)/2
 
 # define n >=2 argument boolean operators
+# and_ <- function(x) Reduce("&", x)
+# or_ <- function(x) Reduce("|", x)
 and <- function(x) Reduce("&", x)
 or <- function(x) Reduce("|", x)
 true <- TRUE
@@ -145,7 +151,7 @@ cmv <- function(cm) {
 }
 
 cml2df <- function(cmlist) {
-  out <- t(vapply(cmlist, cmv, numeric(13)))
+  out <- t(vapply(cmlist, cmv, numeric(16)))
   return(as.data.frame(out))
 }
 

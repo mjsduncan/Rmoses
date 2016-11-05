@@ -25,6 +25,7 @@ evalstring <- function(str, enviro = parent.env()){
 
 ## get vector of unique features from vector of combo strings
 comboFeatures <- function(combos) {
+  require(stringr)
   # break combos into words
   combos <- unique(unlist(str_split(str_replace_all(combos, "[()!]", " "), "[ ]+")))
   # filter for words starting with feature marker "$"
@@ -34,17 +35,40 @@ comboFeatures <- function(combos) {
 }
 
 ## function to make environment with an input vector of feature names set to FALSE
-makeFeatureEnviro <- function(comboStr, parEnviro = .GlobalEnv, val = FALSE) {
-  if(!is.environment(parEnviro)) return("error: assigned parent environment doesn't exist.")
+makeFeatureEnviro <- function(comboStr, parEnviro = emptyenv(), val = FALSE) {
+  if(!is.environment(parEnviro)) stop("error: assigned parent environment doesn't exist.")
   enviro <- new.env(parent = parEnviro)
   comboStr <- comboFeatures(comboStr)
   for(i in comboStr) assign(i, val, envir = enviro)
+  enviro$and <- function(x) Reduce("&", x)
+  enviro$or <- function(x) Reduce("|", x)
+  enviro$true <- TRUE
+  enviro$false <- FALSE
   return(enviro)
 }
 
+## make testing objects
+testCombos <- sample(testCombos$feature25$combo, 20)
+testEnviro <- makeFeatureEnviro(testCombos)
+testInput <- moses_input[sample(1:196803, 10), -c(1, 3401)]
+testInput <- rbind(testInput, moses_input[moses_input[[3401]] == 25,][1:10, -c(1, 3401)])
+row.names(testInput) <- NULL
+table(colSums(testInput))
+#    0    1    2    3    4   10   11
+# 3350   41    4    1    1    1    1
+
+# feature labels for testInput
+# testInput[[3400]]
+# [1] 18 22 23 22 22 22 22 22 19  3 25 25 25 25 25 25 25 25 25 25
+
+## given an named integer feature vector, make a vector of feature names
+input2featureVec <- function(input) names(input)[as.logical(unlist(input))]
+
 ## given a feature vector, add features to an environment
-addFeatures <- function(featureVec, enviro, val = TRUE) {
+addFeatures <- function(featureVec, enviro, filter = TRUE, val = TRUE) {
+  if(filter) featureVec <- intersect(featureVec, ls(envir = enviro))
   for(i in featureVec) assign(i, val, enviro)
+  return(enviro)
 }
 
 ## given a list of combo string ensemble vectors, return an environment with a nested environment for each ensemble
