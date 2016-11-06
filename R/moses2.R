@@ -134,6 +134,7 @@ false <- FALSE
 # turn boolean combo string vector into list of R function combinations
 combo.edit <- function(str) {
 	require(stringr)
+  # replace and with and_ and or with or_ ?
   mc_ops <- list(c("true", "TRUE"), c("(", "(list("), c(")", "))"), c(" ", ", "),c("$", ""))
   for(i in seq_along(mc_ops)) str <- str_trim(str_replace_all(str, fixed(mc_ops[[i]][1]), mc_ops[[i]][2]))
   return(str)
@@ -157,9 +158,10 @@ cml2df <- function(cmlist) {
 
 # evaluate combos from output of  moses2combo() on their corresponding test df and return result lists using caret::confusionMatrix
 # return.cm is flag for return of confusion matrix output
-testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) {
+testCstring <- function(combos, testdf, casecol = 1, return.cm = TRUE) {
 	if(class(testdf) != "data.frame") testdf <- as.data.frame(testdf)
 	case <- testdf[[casecol]]
+	caseprev <- sum(case) / length(case)
 	n <- length(case)
 	attach(testdf, warn = FALSE)
 	m <- length(combos)
@@ -170,7 +172,7 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 			results[i,] <- as.numeric(evalstring(combo.edit(combos[i])))
 			fresult <- as.factor(results[i,])
 			levels(fresult) <- c(0, 1)
-			metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = caserat)
+			metrics[[i]] <- caret::confusionMatrix(fresult, as.factor(case), prev = caseprev)
 		}
 		detach(testdf)
 		metrics <- cml2df(metrics)
@@ -188,21 +190,85 @@ testCstring <- function(combos, testdf, casecol = 1, caserat, return.cm = TRUE) 
 	return(results)
 }
 
+# gtools::mixedorder to put strings with numbers in numeric order
+mixedorder <- function (x, decreasing = FALSE, na.last = TRUE, blank.last = FALSE, 
+          numeric.type = c("decimal", "roman"), roman.case = c("upper", 
+                                                               "lower", "both")) 
+{
+  numeric.type <- match.arg(numeric.type)
+  roman.case <- match.arg(roman.case)
+  if (length(x) < 1) 
+    return(NULL)
+  else if (length(x) == 1) 
+    return(1)
+  if (!is.character(x)) 
+    return(order(x, decreasing = decreasing, na.last = na.last))
+  delim = "\\$\\@\\$"
+  if (numeric.type == "decimal") {
+    regex <- "((?:(?i)(?:[-+]?)(?:(?=[.]?[0123456789])(?:[0123456789]*)(?:(?:[.])(?:[0123456789]{0,}))?)(?:(?:[eE])(?:(?:[-+]?)(?:[0123456789]+))|)))"
+    numeric <- function(x) as.numeric(x)
+  }
+  else if (numeric.type == "roman") {
+    regex <- switch(roman.case, both = "([IVXCLDMivxcldm]+)", 
+                    upper = "([IVXCLDM]+)", lower = "([ivxcldm]+)")
+    numeric <- function(x) roman2int(x)
+  }
+  else stop("Unknown value for numeric.type: ", numeric.type)
+  nonnumeric <- function(x) {
+    ifelse(is.na(numeric(x)), toupper(x), NA)
+  }
+  x <- as.character(x)
+  which.nas <- which(is.na(x))
+  which.blanks <- which(x == "")
+  delimited <- gsub(regex, paste(delim, "\\1", delim, sep = ""), 
+                    x, perl = TRUE)
+  step1 <- strsplit(delimited, delim)
+  step1 <- lapply(step1, function(x) x[x > ""])
+  suppressWarnings(step1.numeric <- lapply(step1, numeric))
+  suppressWarnings(step1.character <- lapply(step1, nonnumeric))
+  maxelem <- max(sapply(step1, length))
+  step1.numeric.t <- lapply(1:maxelem, function(i) sapply(step1.numeric, 
+                                                          function(x) x[i]))
+  step1.character.t <- lapply(1:maxelem, function(i) sapply(step1.character, 
+                                                            function(x) x[i]))
+  rank.numeric <- sapply(step1.numeric.t, rank)
+  rank.character <- sapply(step1.character.t, function(x) as.numeric(factor(x)))
+  rank.numeric[!is.na(rank.character)] <- 0
+  rank.character <- t(t(rank.character) + apply(matrix(rank.numeric), 
+                                                2, max, na.rm = TRUE))
+  rank.overall <- ifelse(is.na(rank.character), rank.numeric, 
+                         rank.character)
+  order.frame <- as.data.frame(rank.overall)
+  if (length(which.nas) > 0) 
+    if (is.na(na.last)) 
+      order.frame[which.nas, ] <- NA
+  else if (na.last) 
+    order.frame[which.nas, ] <- Inf
+  else order.frame[which.nas, ] <- -Inf
+  if (length(which.blanks) > 0) 
+    if (is.na(blank.last)) 
+      order.frame[which.blanks, ] <- NA
+  else if (blank.last) 
+    order.frame[which.blanks, ] <- 1e+99
+  else order.frame[which.blanks, ] <- -1e+99
+  order.frame <- as.list(order.frame)
+  order.frame$decreasing <- decreasing
+  order.frame$na.last <- NA
+  retval <- do.call("order", order.frame)
+  return(retval)
+}
+
 # evaluate list of combo strings & compute catagorization metrics.  "cc_ratio" is cases/1's over cases + controls/0's
 # returns list of lists of pairs of score & confusion matrices for training sets and test sets
 # list of cross validation runs for combos and data sets are ordered to insure correct match
 # TODO: make sure validation run names are identical?
 testClist <- function(clist, tdatlist, caseCol = 1) {
-  require(gtools)
-	# compute case prevalence
-	case <- tdatlist$test[[1]][, caseCol]
-	caseprev <- sum(case) / length(case)
-	if(is.nan(caseprev) | caseprev == 0) stop("malformed case column")
+	# TODO: add sanity checks
 
 	clist <- clist[mixedorder(names(clist))]
 	tdatlist$test[["fold_index"]] <- NULL
-	trainOut <- Map(testCstring, clist, tdatlist$train[mixedorder(names(tdatlist$train))], caserat = caseprev, casecol = caseCol)
-	testOut <- Map(testCstring, clist, tdatlist$test[mixedorder(names(tdatlist$test))], caserat = caseprev, casecol = caseCol)
+	trainOut <- Map(testCstring, clist, tdatlist$train[mixedorder(names(tdatlist$train))], casecol = caseCol)
+	testOut <- Map(testCstring, clist, tdatlist$test[mixedorder(names(tdatlist$test))], casecol = caseCol)
 	return(list(train = trainOut, test = testOut))
 }
 
@@ -220,9 +286,10 @@ bestTestCombos <- function(testClist_out, alpha = NULL) {
 
 # TODO:  fix bug where duplicate combos are not removed but have a number appended to end of combo string!!
 # function to add before reduce:  dropDuplicateCombos(out)
-# make list of list of rownames
+# make list of lists of rownames
 # unlist and find duplicates
 # use names of names to delete duplicate rowname rows
+# or convert row names to a column variable
 
 ## get combos with best training set scores, with optional pvalue alpha for null hypothesis guess value 50-50?
 # if no alpha is given then only combos with accuracy > than AccuracyNull are returned
@@ -353,31 +420,21 @@ mergeAggList <- function(aglst) {
   return(out)
 }
 
-# function to apply vector of combos to data set matrix and return ensemble scores.  rows for results of ensemble applied to each sample are added to output$results and ensemble accuracy is computed and printed.  weighting of ensemble components by accuracy and ppd are implemented but usefulness/correctness isn't validated (~ 0.1% cumulative accuracy improvement in one example)
+# function to apply vector of combos to data set matrix and return ensemble scores.  rows for results of ensemble applied to each sample are added to output$results and ensemble accuracy is computed and printed.  ensemble mean accuracy, ppv, and sensitivity are computed
 # TODO:  add complete score row to individual scores in output$score
 testCensemble <- function(cvec, tdatframe, caseCol = 1) {
+  results <- testCstring(cvec, tdatframe, caseCol, FALSE)
 
   # compute case prevalence
-  case <- tdatframe[, caseCol]
+  case <- tdatframe[[caseCol]]
   caseprev <- sum(case) / length(case)
-  if(is.nan(caseprev) | caseprev == 0) stop("malformed case column")
-  out <- testCstring(cvec, tdatframe, caserat = caseprev, casecol = caseCol)
 
   # compute ensemble scores
-  eScore <- colMeans(out$result[-1,])
-  aWeScore <- out$score$Accuracy %*% as.matrix(out$result[-1,]) / sum(out$score$Accuracy)
-  ppvWeScore <- out$score$`Pos Pred Value` %*% as.matrix(out$result[-1,]) / sum(out$score$`Pos Pred Value`)
-  senWeScore <- out$score$Sensitivity %*% as.matrix(out$result[-1,]) / sum(out$score$Sensitivity)
-  out$result <- rbind(eScore, aWeScore, ppvWeScore, senWeScore, out$result)
-  rownames(out$result)[1:4] <- c("mean", "acc_wt_mean", "ppd_wt_mean", "sen_wt_mean")
-
+  ensembleScore <- colMeans(results[-1,])
+  confusionMatrix <- caret::confusionMatrix(round(ensembleScore), as.factor(case), prev = caseprev)
   # compute ensemble score accuracies
-  nSamples <- dim(tdatframe)[1]
-  print(paste0("ensemble mean accuracy = ", 1 - (sum(abs(round(out$result["mean",]) - out$result["case",])) / nSamples)))
-  print(paste0("accuracy weighted mean = ", 1 - (sum(abs(round(out$result["acc_wt_mean",]) - out$result["case",])) / nSamples)))
-  print(paste0("ppd weighted mean = ", 1 - (sum(abs(round(out$result["ppd_wt_mean",]) - out$result["case",])) / nSamples)))
-  print(paste0("sensitivity weighted mean = ", 1 - (sum(abs(round(out$result["sen_wt_mean",]) - out$result["case",])) / nSamples)))
-  return(out)
+  print(confusionMatrix)
+  return(list(result = results, score = cmv(confusionMatrix)))
 }
 
 testCensXrun <- function(testClist_out, alpha = 0.05, top = 1) {
