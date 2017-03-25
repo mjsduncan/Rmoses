@@ -56,8 +56,8 @@ system2() help page for other values and other system2() variable options.
 `featureCount <- combo2fcount(testSetPerformance[[1]])`
 
 **if test set scores are sufficiently high, get scores for complete data set**
-**combine fold results  and generate aggregate score and confusion matrix**  
-`aggScores <- aggResults(scoresNconfusionMatrix)`  
+**combine fold results matrices and generate aggregate score and confusion matrix**  
+`aggScores <- mergeAggList(aggResults(scoresNconfusionMatrix))`  
 
 *the "aggScores" dataframe is ranked by score so combos can be filtered by row index*  
 

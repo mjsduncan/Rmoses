@@ -74,7 +74,7 @@ moses2combo <- function(mout) {
 combo2fcount <- function(combo, stripX = FALSE, split = FALSE) {
 	out <- vector("list", 2)
 	names(out) <- c("up", "down")
-	combo <- gsub("and_|or_|[`()$]", "", unlist(combo))
+	combo <- gsub("and|or|[`()$]", "", unlist(combo))
 	combo <- unlist(strsplit(combo, split = " ", fixed = TRUE))
 	out$up <- grep("!", combo, value = TRUE, fixed = TRUE, invert = TRUE)
 	out$down <- substr(grep("!", combo, value = TRUE, fixed = TRUE), 2, 100)
@@ -408,7 +408,7 @@ aggResults <- function(testOut) {
 # aggScores <- lapply(scoresNconfusionMatrix, aggResults)
 # mergedRuns <- mergeAggList(aggScores)
 mergeAggList <- function(aglst) {
-  results <- lapply(aglst, function(x) x$results[, order(names(x$results))])
+  results <- lapply(aglst$results, function(x) x$results[, order(names(x$results))])
   results <- Reduce(rbind, lapply(results, name2col))
   results <- results[!grepl("^case", results),]
   confusionMatrix <- lapply(aglst, function(x) x$confusionMatrix)
@@ -437,6 +437,7 @@ testCensemble <- function(cvec, tdatframe, caseCol = 1) {
   return(list(result = results, score = cmv(confusionMatrix)))
 }
 
+# TODO:  convert weighted means to mean of weights
 testCensXrun <- function(testClist_out, alpha = 0.05, top = 1) {
   scores <- lapply(testVtrain(testClist_out, c("Accuracy", "AccuracyPValue", "Pos Pred Value", "Sensitivity")), function(x) x[,, "train"])
   scores <- lapply(scores, function(x) x[x[,"AccuracyPValue"] < alpha, -2])
@@ -457,7 +458,7 @@ testCensXrun <- function(testClist_out, alpha = 0.05, top = 1) {
   `accuracy weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["acc_wt_mean",]) - x["case",])) / y, out, nSamples)
   `ppd weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["ppd_wt_mean",]) - x["case",])) / y, out, nSamples)
   `sensitivity weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["sen_wt_mean",]) - x["case",])) / y, out, nSamples)
-  print(cbind(`ensemble mean accuracy`, `accuracy weighted mean`, `ppd weighted mean`, `sensitivity weighted mean`))
+  print(cbind(`ensemble mean accuracy`)) # , `accuracy weighted mean`, `ppd weighted mean`, `sensitivity weighted mean`
   return(out)
 }
 
