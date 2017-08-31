@@ -143,7 +143,6 @@ PACKAGES_BUILD="
 		libboost-thread-dev \
 		libboost-system-dev \
 		libboost-random-dev \
-		libjson-spirit-dev \
 		libzmq3-dev \
 		libtbb-dev \
 		binutils-dev \
@@ -161,11 +160,13 @@ PACKAGES_BUILD="
 		gfortran \
 		gearman \
 		libgearman-dev \
-		ros-indigo-octomap \
 		ccache \
 		libgsasl7 \
 		libldap2-dev \
 		krb5-multidev \
+		wordnet \
+		wordnet-dev \
+		wordnet-sense-index \
 		"
 		#liblua5.1-0-dev \
 		#libxmlrpc-c3-dev \
@@ -330,6 +331,7 @@ if [ "$SELF_NAME" == "$TOOL_NAME" ] ; then
   echo "Usage: $SELF_NAME OPTION"
   echo " -r Add software repositories"
   echo " -d Install base/system build dependencies"
+  echo " -o Install dependencies and download data for the opencog repo"
   echo " -p Install python build dependencies"
   echo " -s Install haskell build dependencies in user space. Don't use sudo"
   echo " -i Install build-job artifacts"
@@ -367,10 +369,11 @@ fi
 if [ $# -eq 0 ] ; then NO_ARGS=true ; fi
 
 if [ "$SELF_NAME" == "$TOOL_NAME" ] ; then
-  while getopts "abdeipcrstlmhvj:" flag ; do
+  while getopts "abdeipcrstlmhvj:o" flag ; do
     case $flag in
       r)	ADD_REPOSITORIES=true ;;
       d)	INSTALL_DEPENDENCIES=true ;; #base development packages
+      o)	INSTALL_OPENCOG_DEPENDENCIES=true ;; #base development packages
       p)	INSTALL_OPENCOG_PYTHON_PACKAGES=true ;;
       c)	INSTALL_COGUTIL=true ;;
       a)	INSTALL_ATOMSPACE=true ;;
@@ -541,6 +544,12 @@ else
 fi
 }
 
+get_distro_version() {
+    cat /etc/os-release | grep "^VERSION_ID="  | cut -d "=" -f 2
+}
+
+UBUNTU_VERSION=$(get_distro_version)
+
 add_stack_repository() {
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 575159689BEFB442
 echo 'deb http://download.fpcomplete.com/ubuntu trusty main'|sudo tee /etc/apt/sources.list.d/fpco.list
@@ -553,8 +562,9 @@ for REPO in $REPOSITORIES ; do
 done
 
 # Ros repository for opencog/opencog repo
-sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu trusty main" > /etc/apt/sources.list.d/ros-latest.list'
-sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys B01FA116
+sudo sh -c 'echo "deb http://packages.ros.org/ros/ubuntu $(lsb_release -sc) main" > /etc/apt/sources.list.d/ros-latest.list'
+# sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys B01FA116
+sudo apt-key adv --keyserver hkp://ha.pool.sks-keyservers.net:80 --recv-key 421C365BD9FF1F717815A3895523BAEEB01FA116
 sudo apt-get $QUIET --assume-yes update
 }
 
@@ -598,6 +608,7 @@ wget https://raw.githubusercontent.com/opencog/opencog/master/opencog/python/req
 # build occupies a lot of space blotting the docker image. Thus instead a
 # system instllation is made.
 # TODO: cleanup the requirements.txt file.
+sudo pip install -U pip
 sudo pip install -U $(awk '!/scipy/&&!/numpy/&&!/matplotlib/' requirements.txt)
 sudo apt-get install -y python-matplotlib python-numpy python-scipy python
 
@@ -611,26 +622,39 @@ cd $CURRENT_DIR
 
 # Install Haskell Dependencies
 install_haskell_dependencies(){
-if ! is_x68_64; then
-  MESSAGE="Installing stack for haskell "; message
-  # Just in case curl isn't installed
-  sudo apt-get install -y curl
-  cd /tmp
-  rm -rf stack*
-  wget $( curl -s  https://api.github.com/repos/commercialhaskell/stack/releases/latest | awk '/browser_download_url/&&/stack-[0-9\.]*-linux-i386.tar.gz/' | head -n 1 | cut -d '"' -f 4)
-  tar xfz stack*i386-linux.tar.gz
-  rm stack*i386-linux.tar.gz
-  mv stack* stack
-  chmod 755 stack
-  sudo mv stack /usr/bin/stack
-  rm -f stack*
-  cd $CURRENT_DIR
-else
+# if ! is_x68_64; then
+#   MESSAGE="Installing stack for haskell "; message
+#   # Just in case curl isn't installed
+#   sudo apt-get install -y curl
+#   cd /tmp
+#   rm -rf stack*
+#   wget $( curl -s  https://api.github.com/repos/commercialhaskell/stack/releases/latest | awk '/browser_download_url/&&/stack-[0-9\.]*-linux-i386.tar.gz/' | head -n 1 | cut -d '"' -f 4)
+#   tar xfz stack*linux-i386.tar.gz
+#   rm stack*linux-i386.tar.gz
+#   mv stack* stack
+#   chmod 755 stack
+#   sudo mv stack /usr/bin/stack
+#   rm -f stack*
+#   cd $CURRENT_DIR
+# else
   MESSAGE="Installing haskell dependencies in user space...." ; message
   # Install stack.
-  add_stack_repository
-  sudo apt-get update && sudo apt-get $QUIET -y install stack
-fi
+  # add_stack_repository
+  # sudo apt-get update && sudo apt-get $QUIET -y install stack
+  sudo wget -qO- https://get.haskellstack.org/ | sh
+# fi
+
+cd /tmp
+rm -rf patchelf*
+wget "https://nixos.org/releases/patchelf/patchelf-0.9/patchelf-0.9.tar.bz2"
+tar -jxf patchelf-0.9.tar.bz2
+rm patchelf-0.9.tar.bz2
+cd patchelf-0.9
+./configure
+sudo make install
+cd /tmp
+rm -rf patchelf-0.9
+cd $CURRENT_DIR
 
 # Notes
 # 1. Stack setup must me run in user space:
@@ -811,40 +835,82 @@ cd $CURRENT_DIR
 # Installs cpprest that is needed by pattern-miner
 # https://github.com/Microsoft/cpprestsdk/wiki/How-to-build-for-Linux
 install_cpprest(){
-MESSAGE="Installing cpprest...." ; message
+if [[ "$UBUNTU_VERSION" == "\"14.04\"" ]]; then
+    if [[ -f /usr/local/lib/libcpprest.so.2.9 ]]; then
+        MESSAGE="cpprest is already installed." ; message
+        return
+    fi
+    MESSAGE="Installing cpprest...." ; message
+    cd /tmp/
+    # cleaning up remnants from previous install failures, if any.
+    rm -rf v2.9.0.tar.gz* cpprestsdk-2.9.0
+    wget https://github.com/Microsoft/cpprestsdk/archive/v2.9.0.tar.gz
+    tar -xvf v2.9.0.tar.gz
+    cd cpprestsdk-2.9.0/Release
+    mkdir build.release
+    cd build.release
+    CXX=g++-4.8 cmake .. -DCMAKE_BUILD_TYPE=Release
+    make -j$(nproc)
+    sudo make install
+    sudo ldconfig
+    cd /tmp/
+    rm -rf v2.9.0.tar.gz* cpprestsdk-2.9.0
+    cd $CURRENT_DIR
+elif [[ "$UBUNTU_VERSION" == "\"16.04\"" ]]; then
+    sudo apt-get install -y libcpprest
+fi
+}
+
+# Install ros-behavior-scripting
+install_rbs(){
+MESSAGE="Installing ros-behavior-scripting ...." ; message
 cd /tmp/
 # cleaning up remnants from previous install failures, if any.
-rm -rf master.tar.gz*  cpprestsdk-master
-wget https://github.com/Microsoft/cpprestsdk/archive/master.tar.gz
+rm -rf master.tar.gz* ros-behavior-scripting-master
+wget https://github.com/opencog/ros-behavior-scripting/archive/master.tar.gz
 tar -xvf master.tar.gz
-cd cpprestsdk-master/Release
-mkdir build.release
-cd build.release
-CXX=g++-4.8 cmake .. -DCMAKE_BUILD_TYPE=Release
-make -j$(nproc)
+cd ros-behavior-scripting-master/
+mkdir build
+cd build/
+cmake ..
 sudo make install
-sudo ldconfig
 cd /tmp/
-rm -rf master.tar.gz*  cpprestsdk-master
+rm -rf master.tar.gz ros-behavior-scripting-master/
 cd $CURRENT_DIR
 }
 
 # Install system dependencies
 install_dependencies() {
 MESSAGE="Installing OpenCog build dependencies...." ; message
-if ! sudo apt-get $QUIET --no-upgrade --assume-yes install $PACKAGES_BUILD $PACKAGES_RUNTIME $PACKAGES_FETCH; then
- # commented out the message b/c it is displayed on ctrl + c
- # MESSAGE="Please enable 'universe' repositories and re-run this script."  ; message
-  exit 1
+
+if [ "$UBUNTU_VERSION" == "\"14.04\"" ]; then
+    if ! sudo apt-get $QUIET --no-upgrade --assume-yes install $PACKAGES_BUILD $PACKAGES_RUNTIME $PACKAGES_FETCH ros-indigo-octomap; then
+     # commented out the message b/c it is displayed on ctrl + c
+     # MESSAGE="Please enable 'universe' repositories and re-run this script."  ; message
+      exit 1
+    fi
+elif [[ "$UBUNTU_VERSION" = "\"16.04\"" ]]; then
+    if ! sudo apt-get $QUIET --no-upgrade --assume-yes install $PACKAGES_BUILD $PACKAGES_RUNTIME $PACKAGES_FETCH ros-lunar-octomap; then
+        exit 1
+    fi
 fi
+
 install_cpprest
-# test for and fix Ubuntu 14.04 libiberty-dev includefile bug
-source /etc/lsb-release
-if [ "$DISTRIB_CODENAME" == "trusty" ] ; then
-  sudo sed -i s:"ansidecl.h":\<libiberty/ansidecl.h\>:g /usr/include/bfd.h || true
-fi
 }
 
+# Download data
+download_data() {
+  MESSAGE="Downloading OpenCog's sample datasets ...." ; message
+  DOWNLOAD_DIR="/var/opencog/data"
+  if [ ! -d "$DOWNLOAD_DIR" ]; then
+    sudo mkdir -p "$DOWNLOAD_DIR"
+  fi
+
+  if [ ! -f "$DOWNLOAD_DIR/gtwc-en-333333-words.scm" ]; then
+    sudo wget -O "$DOWNLOAD_DIR/gtwc-en-333333-words.scm" \
+      https://raw.githubusercontent.com/opencog/test-datasets/master/concept_nodes/gtwc-en-333333-words.scm
+  fi
+}
 update_opencog_source() {
 if sudo apt-get --no-upgrade --assume-yes $QUIET install $PACKAGES_FETCH ; then
   echo -n
@@ -1073,6 +1139,7 @@ cleanup_iso
 if [ "$SELF_NAME" == "$TOOL_NAME" ] ; then
     if [ $ADD_REPOSITORIES ] ; then add_repositories ; fi
     if [ $INSTALL_DEPENDENCIES ] ; then install_dependencies ; fi
+    if [ $INSTALL_OPENCOG_DEPENDENCIES ] ; then download_data ; fi
     if [ $HASKELL_STACK_SETUP ] ; then install_haskell_dependencies ; fi
     if [ $INSTALL_OPENCOG_PYTHON_PACKAGES ] ; then install_opencog_python_packages ; fi
     if [ $INSTALL_COGUTIL ] ; then install_cogutil ; fi
@@ -1081,7 +1148,7 @@ if [ "$SELF_NAME" == "$TOOL_NAME" ] ; then
     if [ $INSTALL_MOSES ] ; then install_moses ; fi
     if [ $BUILD_SOURCE ] ; then build_source ; fi
     if [ $BUILD_EXAMPLES ] ; then build_examples ; fi
-    if [ $TEST_SOURCE ] ; then test_source ; fi
+    if [ $TEST_SOURCE ] ; then install_build && test_source ; fi
     if [ $INSTALL_BUILD ] ; then install_build ; fi
     if [ $UNKNOWN_FLAGS ] ; then usage ; fi
     if [ $NO_ARGS ] ; then usage ; fi

@@ -1,0 +1,22 @@
+Package: Rmoses
+Title: wrappers and tools for using opencog::moses
+Description: "Meta-optimizing semantic evolutionary search"" (MOSES) is a 
+supervised machine learning system that generates programs in a simple lisp-
+like language to minimize a scoring function over the data to be catagorized.  
+It's two level algorithm generates a population of sample programs or "demes"
+which are taken individually in the second level evolutionary loop and randomly
+"mutated" to generate better scoring programs untill improvement plateaus.  The
+most successful programs are returned to the population and a new deme variant 
+is selected for evolution.
+Programs are regularly normalized to reduce evaluation time and help keep code 
+human-readable.  The Rmoses package provides a wrapper for the seperately 
+installed open source moses binary, interface functions with BioConductor 
+bioinformatics packages, and a combo program translator for application to new
+data sets in the R environment.
+Version: 0.1
+Date: 2013-07-20
+Maintainer: mike d <mjsduncan@gmail.com>
+Author: mike d
+Depends: R (>= 3.0.1), moses (current build)
+Imports: stringr
+License: apache 2.0

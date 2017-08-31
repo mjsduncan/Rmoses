@@ -440,26 +440,33 @@ testCensemble <- function(cvec, tdatframe, caseCol = 1) {
 # TODO:  convert weighted means to mean of weights
 testCensXrun <- function(testClist_out, alpha = 0.05, top = 1) {
   scores <- lapply(testVtrain(testClist_out, c("Accuracy", "AccuracyPValue", "Pos Pred Value", "Sensitivity")), function(x) x[,, "train"])
+	#  drop combos with high accuracy p value
   scores <- lapply(scores, function(x) x[x[,"AccuracyPValue"] < alpha, -2])
-  scores <- lapply(scores, function(x) x[order(x[,"Accuracy"])[1:round(top * length(x[,1]))],])
+	# drop empty runs
+  notEmpty <- sapply(scores, function(x) !is.null(dim(x)))
+  scores <- scores[notEmpty]
+  # get top n by accuracy
+  scores <- lapply(scores, function(x) x[order(x[,"Accuracy"], decreasing = TRUE)[seq(1, top)],, drop = FALSE])
   out <- lapply(testClist_out$test, function(x) x$result)
-  out <- mapply(function(x, y) x[c("case", rownames(y)),], out, scores, SIMPLIFY = FALSE)
-  # compute ensemble scores by run
+  out <- out[notEmpty]
+  out <- mapply(function(x, y) x[c("case", rownames(y)),, drop = FALSE], out, scores, SIMPLIFY = FALSE)
+  # drop NA rows for top > significant combos
+  out <- lapply(out, na.omit)
+    # compute ensemble scores by run
   eScore <- lapply(out, function(x) colMeans(x[-1,]))
-  aWeScore <- mapply(function(x, y) x[, "Accuracy"] %*% as.matrix(y[-1,]) / sum(x[, "Accuracy"]), scores, out, SIMPLIFY = FALSE)
-  ppvWeScore <- mapply(function(x, y) x[, "Pos Pred Value"] %*% as.matrix(y[-1,]) / sum(x[, "Pos Pred Value"]), scores, out, SIMPLIFY = FALSE)
-  senWeScore <- mapply(function(x, y) x[, "Sensitivity"] %*% as.matrix(y[-1,]) / sum(x[, "Sensitivity"]), scores, out, SIMPLIFY = FALSE)
-  out <- mapply(rbind, eScore, aWeScore, ppvWeScore, senWeScore, out, SIMPLIFY = FALSE)
-  for(i in 1:length(out)) rownames(out[[i]])[1:4] <- c("mean", "acc_wt_mean", "ppd_wt_mean", "sen_wt_mean")
-
+  # aWeScore <- mapply(function(x, y) x[, "Accuracy"] %*% as.matrix(y[-1,]) / sum(x[, "Accuracy"]), scores, out, SIMPLIFY = FALSE)
+  # ppvWeScore <- mapply(function(x, y) x[, "Pos Pred Value"] %*% as.matrix(y[-1,]) / sum(x[, "Pos Pred Value"]), scores, out, SIMPLIFY = FALSE)
+  # senWeScore <- mapply(function(x, y) x[, "Sensitivity"] %*% as.matrix(y[-1,]) / sum(x[, "Sensitivity"]), scores, out, SIMPLIFY = FALSE)
+  out <- mapply(rbind, eScore, out, SIMPLIFY = FALSE) # , aWeScore, ppvWeScore, senWeScore
+  for(i in 1:length(out)) rownames(out[[i]])[1] <- "mean"  #       :4] <- c("mean", "acc_wt_mean", "ppd_wt_mean", "sen_wt_mean")
   # compute ensemble score accuracies
-  nSamples <- sapply(out, function(x) dim(x)[2] - 4)
-  `ensemble mean accuracy` = mapply(function(x, y) 1 - sum(abs(round(x["mean",]) - x["case",])) / y, out, nSamples)
-  `accuracy weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["acc_wt_mean",]) - x["case",])) / y, out, nSamples)
-  `ppd weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["ppd_wt_mean",]) - x["case",])) / y, out, nSamples)
-  `sensitivity weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["sen_wt_mean",]) - x["case",])) / y, out, nSamples)
-  print(cbind(`ensemble mean accuracy`)) # , `accuracy weighted mean`, `ppd weighted mean`, `sensitivity weighted mean`
-  return(out)
+  nSamples <- lapply(out, function(x) dim(x)[2])
+`ensemble mean accuracy` = mapply(function(x, y) 1 - (sum(round(abs(x["mean",] - x["case",]))) / y), out, nSamples)
+  # `accuracy weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["acc_wt_mean",]) - x["case",])) / y, out, nSamples)
+  # `ppd weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["ppd_wt_mean",]) - x["case",])) / y, out, nSamples)
+  # `sensitivity weighted mean` = mapply(function(x, y) 1 - sum(abs(round(x["sen_wt_mean",]) - x["case",])) / y, out, nSamples)
+  print(`ensemble mean accuracy`) #, `accuracy weighted mean`, `ppd weighted mean`, `sensitivity weighted mean`)) 
+  return(c(accuracies = `ensemble mean accuracy`, top = top, alpha = alpha, results = out))
 }
 
 # convert fold_index df of training sample number X run to boolean matrix of run X sample number
@@ -479,15 +486,16 @@ checklist <- function(list, cond) {
 
 }
 
+# TODO: needs to be checked, may be broken
 # using boolean matrix output of samplesInTrainingSet(), get accuracy of ensemble on testing/out-of-sample data
 testCensXsample <- function(testClist_out, sits_out, part = "train", alpha = 0.05, score = "Accuracy", scoreMin = NULL, top = NULL) {
   stopifnot(score %in% c("Accuracy", "Pos Pred Value", "Sensitivity"))
   # drop not significant and worst combos from part (test or train) partition
   bestCombos <- lapply(testVtrain(testClist_out, c("Accuracy", "AccuracyPValue", "Pos Pred Value", "Sensitivity")), function(x) x[,, part])
-  bestCombos <- lapply(bestCombos, function(x) x[x[,"AccuracyPValue"] < alpha, -2])
-  if(!is.null(scoreMin)) bestCombos <- lapply(bestCombos, function(x) x[x[, score] >= scoreMin,])
+  bestCombos <- lapply(bestCombos, function(x) x[x[,"AccuracyPValue"] < alpha, -2, drop = FALSE])
+  if(!is.null(scoreMin)) bestCombos <- lapply(bestCombos, function(x) x[x[, score] >= scoreMin,, drop = FALSE])
   # bestCombos <- lapply(bestCombos, function(x) x[order(x[, score]),])
-  if(!is.null(top)) bestCombos <- lapply(bestCombos, function(x) x[order(x[, score])[1:round(top * length(x[,1]))],])
+  if(!is.null(top)) bestCombos <- lapply(bestCombos, function(x) x[order(x[, score])[1:round(top * length(x[,1]))],, drop = FALSE])
   bestCombos <- lapply(bestCombos, function(x) c("case", rownames(x)))
   testClist_out <- mapply(function(x, y) x$result[y,], testClist_out$test, bestCombos, SIMPLIFY = FALSE)
   # make list whose elements are a list for each sample of combo testing run results for each run not in the training set of the sample
