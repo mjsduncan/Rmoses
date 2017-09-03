@@ -441,7 +441,7 @@ testCensemble <- function(cvec, tdatframe, caseCol = 1) {
 testCensXrun <- function(testClist_out, alpha = 0.05, top = 1) {
   scores <- lapply(testVtrain(testClist_out, c("Accuracy", "AccuracyPValue", "Pos Pred Value", "Sensitivity")), function(x) x[,, "train"])
 	#  drop combos with high accuracy p value
-  scores <- lapply(scores, function(x) x[x[,"AccuracyPValue"] < alpha, -2])
+  scores <- lapply(scores, function(x) x[x[,"AccuracyPValue"] < alpha, -2, drop = FALSE])
 	# drop empty runs
   notEmpty <- sapply(scores, function(x) !is.null(dim(x)))
   scores <- scores[notEmpty]
