@@ -568,6 +568,12 @@ med.normalize <- function(mat) {
   return(out)
 }
 
+# replace missing values by median of all samples, rounding ties down:
+bin.interpolate <- function(bv) {
+	bv[is.na(bv)] <- round(median(bv, na.rm = TRUE))
+	return(bv)
+}
+
 ## ensemble validation?
 # i can't remember how this works or where it is from.
 getScores <- function(m2cOut, penalized = FALSE) {

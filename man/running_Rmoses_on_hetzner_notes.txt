@@ -1,0 +1,44 @@
+#  outline of commands to run moses through R on the hetzner command line
+
+# on hetzner, make a directory to share with the bcbio-moses docker container
+mkdir share
+docker run -it -v /container/path/to/share:/hetzner/path/to/share --name moses-run-name bcbio-moses:latest
+container$ cd /container/path/to/share
+
+#  run sftp (ssh ftp, secure shell file transfer protocol) program from directory you want to transfer from
+cd /local/path/to/source
+ls
+	source.csv
+
+sftp hetzner-login-name@144.76.153.5
+
+# navigate to share directory and "put" file.  you may have to transfer the moses R code but there is a copy of the git repo on the image
+sftp> cd /container/path/to/share
+sftp> put source.csv
+sftp> put /path/to/moses2.R
+
+# on hetzner in container run R
+container$ ls
+	source.csv  moses2.R
+container$ R
+R> source(moses2.R)
+R> data <- read.csv("source.csv")
+R> make.directory("metarun")
+R> setwd("metarun")
+R> moses_data <- makeMpartitions(data, p = .8)
+R> moses_out <- runMfolder("-j8 --balance 1 -m 100000 -W 1 --output-cscore 1 --result-count 100 --reduct-knob-building-effort=1 --hc-widen-search=1 --R> enable-fs=1 --fs-algo=smd --fs-target-size=4 --hc-crossover-min-neighbors=5000 --fs-focus=all --fs-seed=init --complexity-ratio=3 --hc-max-nn-evals=10000 --hc-crossover-pop-size=1000 -l debug")
+
+# save output
+R> save(moses_data, moses_out, file = "metarun_out.rdata")
+
+# download the output
+sftp> cd metarun
+sftp> get metarun_out.rdata
+
+#cleanup
+sftp> quit
+R> quit()
+stop & delete container if desired, etc...
+
+# now you have everything you need to analize the metarun on your local machine!
+
