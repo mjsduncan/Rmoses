@@ -22,11 +22,12 @@ makeMpartitions <- function(data, k = 10, control = 1, dir = "./", namestr = dep
   return(out)
 }
 
-# run moses on a file.  log file is named as input file name to first "." plus ".log".  output can be a file name.
+# run moses on a file.  log file is named as input file name to first "." plus ".log".  output can be a file name.  stdout now includes log output so this must be filtered from results.
+# results are now saved to file input file name to first "." plus ".out".
 moses <- function( flags = "", DSVfile = "", output = TRUE, ...) {
   if(flags == "help") flags <- "--help"          # moses(help) -> moses --help
   if(flags == "version")  flags <- "--version"    # moses() -> moses --version
-  if(DSVfile != "") flags <- paste("--input-file", DSVfile, "--log-file", paste0(word(DSVfile, sep = fixed(".")), ".log"), flags)
+  if(DSVfile != "") flags <- paste("--input-file", DSVfile, "--log-file", paste0(word(DSVfile, sep = fixed(".")), ".log"), "--output-file", paste0(word(DSVfile, sep = fixed(".")), ".out"), flags)
   system2("moses", args=flags, stdout = output, ...)
 }
 
