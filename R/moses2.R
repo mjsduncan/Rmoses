@@ -29,6 +29,7 @@ moses <- function( flags = "", DSVfile = "", output = TRUE, ...) {
   if(flags == "version")  flags <- "--version"    # moses() -> moses --version
   if(DSVfile != "") flags <- paste("--input-file", DSVfile, "--log-file", paste0(word(DSVfile, sep = fixed(".")), ".log"), "--output-file", paste0(word(DSVfile, sep = fixed(".")), ".out"), flags)
   system2("moses", args=flags, stdout = output, ...)
+  readLines(paste0(word(DSVfile, sep = fixed(".")), ".out"))
 }
 
 # run moses on all csv files in a directory.  "output" argument can be a file name.
