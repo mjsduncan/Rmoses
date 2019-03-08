@@ -75,19 +75,19 @@ moses2combo <- function(mout) {
 # make combo strings and feature dfs using moses2combo and combo2fcount
 combo2fcount <- function(combo, stripX = FALSE, split = FALSE) {
 	out <- vector("list", 2)
-	names(out) <- c("up", "down")
+	names(out) <- c("case", "control")
 	combo <- gsub("and|or|[`()$]", "", unlist(combo))
 	combo <- unlist(strsplit(combo, split = " ", fixed = TRUE))
-	out$up <- grep("!", combo, value = TRUE, fixed = TRUE, invert = TRUE)
-	out$down <- substr(grep("!", combo, value = TRUE, fixed = TRUE), 2, 100)
-	if(length(out$down) == 0) out$down <- NULL
+	out$case <- grep("!", combo, value = TRUE, fixed = TRUE, invert = TRUE)
+	out$control <- substr(grep("!", combo, value = TRUE, fixed = TRUE), 2, 100)
+	if(length(out$control) == 0) out$control <- NULL
 	if(stripX) out <- lapply(out, substr, 2, 100)
 	out <- lapply(out, function (feature) as.data.frame(table(feature), stringsAsFactors = FALSE))
 	if(split) return(lapply(out, function(x) x[order(x$Freq, decreasing = TRUE),]))
-	out$up$level <- "up"
-	if(is.null(out$down)) out <- out$up else {
-	  out$down$level <- "down"
-	  out <- rbind(out$up, out$down)[order(rbind(out$up, out$down)$Freq, decreasing = TRUE),]
+	out$case$category <- "case"
+	if(is.null(out$control)) out <- out$case else {
+	  out$control$category <- "control"
+	  out <- rbind(out$case, out$control)[order(rbind(out$case, out$control)$Freq, decreasing = TRUE),]
 	}
 	out[order(out$Freq, out$feature, decreasing = TRUE),]
   rownames(out) <- NULL

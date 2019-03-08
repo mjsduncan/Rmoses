@@ -1,4 +1,12 @@
 ### how many folds to get each sample in at least one test partition?
+# set global variables
+cores <- 8
+
+# set up parallel processing
+library(foreach)
+library(doParallel)
+registerDoParallel(cores)
+
 # N is number of samples, n is size of test set, f is number of folds
 library(extraDistr)
 
@@ -13,10 +21,9 @@ completeCoverage <- Vectorize(
 # function to generate summary of experiment given number of trials per fold and fold range
 MCvalidationFoldTest <- function(N, n, folds, trials = 10) {
   minFolds <- ceiling(N/n) - 1
-  labels <- list(paste("trial", 1:trials), seq.int(minFolds + 1, length.out = folds))
-  results <- matrix(0, nrow = trials, ncol = folds)
-  results <- col(results) + minFolds
-  results <- t(apply(results, 1, function(x) completeCoverage(N, n, x)))
+  folds <- seq.int(minFolds + 1, length.out = folds)
+  labels <- list(paste("trial", 1:trials), folds)
+  results <- foreach(i = 1:trials, .combine = "rbind") %dopar% completeCoverage(N, n, folds)
   dimnames(results) <- labels
   summary <- apply(results, 2, function(x) sum(x)/length(x))
   return(summary)
@@ -35,17 +42,15 @@ MCvalidationFoldTest(10, 3, 10, 100000)
 #       4       5       6       7       8       9      10      11      12      13 
 # 0.01463 0.08852 0.22004 0.37168 0.51933 0.64220 0.73698 0.81170 0.86466 0.90458 
 
-MCvalidationFoldTest(10, 1, 10, 10000)
-#     10     11     12     13     14     15     16     17     18     19 
-# 0.0005 0.0018 0.0045 0.0144 0.0260 0.0458 0.0712 0.1001 0.1357 0.1693 
-
 split_3.10.20 <- MCvalidationFoldTest(10, 3, 20, 10000)
 barplot(split_3.10.20, main = "samples = 10, test set = 3, folds tried = 20, trials = 10000")
-split_30.100.20 <- MCvalidationFoldTest(100, 30, 20, 10000)
-barplot(split_30.100.20, main = "samples = 100, test set = 30, folds tried = 20, trials = 10000")
-split_1.10.50 <- MCvalidationFoldTest(10, 1, 50, 10000)
-barplot(split_1.10.50, main = "samples = 100, test set = 10, folds tried = 30, trials = 10000")
-split_10.100.50 <- MCvalidationFoldTest(10, 1, 50, 10000)
-barplot(split_10.100.50, main = "samples = 100, test set = 10, folds tried = 50, trials = 10000")
-split_30.100.30 <- MCvalidationFoldTest(100, 30, 30, 10000)
+split_30.100.20 <- MCvalidationFoldTest(100, 30, 30, 10000)
 barplot(split_30.100.30, main = "samples = 100, test set = 30, folds tried = 30, trials = 10000")
+split_1.10.50 <- MCvalidationFoldTest(10, 1, 50, 10000)
+barplot(split_1.10.50, main = "samples = 10, test set = 1, folds tried = 30, trials = 10000")
+split_10.100.50 <- MCvalidationFoldTest(100, 10, 50, 10000)
+barplot(split_10.100.50, main = "samples = 100, test set = 10, folds tried = 50, trials = 10000")
+split_5.10.50 <- MCvalidationFoldTest(10, 5, 50, 10000)
+barplot(split_5.10.50, main = "samples = 10, test set = 5, folds tried = 30, trials = 10000")
+split_50.100.50 <- MCvalidationFoldTest(100, 50, 50, 10000)
+barplot(split_10.100.50, main = "samples = 100, test set = 50, folds tried = 50, trials = 10000")
